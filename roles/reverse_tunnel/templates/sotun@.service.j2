@@ -21,7 +21,7 @@ LimitNPROC=infinity
 LimitNOFILE=infinity
 LimitMEMLOCK=infinity
 OOMScoreAdjust=-1000
-ExecStart=/usr/bin/ssh -N -T -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -i {{ ssh_identity_file }} -R %i:127.0.0.1:%i {{ reverse_tunnel_user }}@{{ reverse_tunnel_target_host }} -p {{ reverse_tunnel_target_port }}
+ExecStart=/usr/bin/ssh -N -T -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o ServerAliveInterval={{ ssh_config. ServerAliveInterval }} -o ServerAliveCountMax={{ ssh_config.ServerAliveCountMax }} -o ExitOnForwardFailure=yes -i {{ ssh_config.IdentityFile }} -R %i:127.0.0.1:%i {{ reverse_tunnel_user }}@{{ reverse_tunnel_target_host }} -p {{ reverse_tunnel_target_port }}
 Restart=always
 RestartSec=2
 

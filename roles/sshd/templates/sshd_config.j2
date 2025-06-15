@@ -1,0 +1,45 @@
+# {{ ansible_managed }}
+
+Port {{ sshd_config.Port }}
+ListenAddress {{ sshd_config.ListenAddress }}
+Protocol 2
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PermitRootLogin {{ sshd_config.PermitRootLogin }}
+PasswordAuthentication {{ sshd_config.PasswordAuthentication }}
+KbdInteractiveAuthentication {{ sshd_config.KbdInteractiveAuthentication }}
+UsePAM {{ sshd_config.UsePAM }}
+ 
+X11Forwarding {{ sshd_config.X11Forwarding }}
+AllowTcpForwarding {{ sshd_config.AllowTcpForwarding }}
+GatewayPorts {{ sshd_config.GatewayPorts }}
+PermitTunnel {{ sshd_config.PermitTunnel }}
+LoginGraceTime {{ sshd_config.LoginGraceTime }}
+MaxSessions {{ sshd_config.MaxSessions }}
+MaxAuthTries {{ sshd_config.MaxAuthTries }}
+UseDNS {{ sshd_config.UseDNS }}
+PrintLastLog {{ sshd_config.PrintLastLog }}
+Compression {{ sshd_config.Compression }}
+PrintMotd {{ sshd_config.PrintMotd }}
+
+KexAlgorithms {{ sshd_config.KexAlgorithms }}
+Ciphers {{ sshd_config.Ciphers }}
+MACs {{ sshd_config.MACs }}
+
+TCPKeepAlive {{ sshd_config.TCPKeepAlive }}
+ClientAliveInterval {{ sshd_config.ClientAliveInterval }}
+ClientAliveCountMax {{ sshd_config.ClientAliveCountMax }}
+
+LogLevel {{ sshd_config.LogLevel }}
+
+Subsystem sftp /usr/lib/openssh/sftp-server
+
+Match User {{ tunnel_user }}
+    ChrootDirectory none
+    AllowTcpForwarding yes
+    PermitTTY no
+    ForceCommand echo 'This account is restricted to port forwarding only.'
+    AllowAgentForwarding no
+    AllowStreamLocalForwarding yes

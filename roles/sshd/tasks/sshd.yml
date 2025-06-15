@@ -1,0 +1,8 @@
+---
+- name: Make sshd config
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    backup: true
+  notify:
+    - Restart sshd

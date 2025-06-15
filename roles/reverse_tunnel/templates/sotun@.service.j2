@@ -1,0 +1,30 @@
+[Unit]
+Description=Reverse SSH Tunnel on port %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+CPUAccounting=no
+MemoryAccounting=no
+IOAccounting=no
+IPAccounting=no
+TasksAccounting=no
+CPUQuota=
+MemoryMax=
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=98
+IOSchedulingClass=realtime
+IOSchedulingPriority=0
+LimitRTPRIO=99
+LimitRTTIME=infinity
+LimitNPROC=infinity
+LimitNOFILE=infinity
+LimitMEMLOCK=infinity
+OOMScoreAdjust=-1000
+Slice=-.slice
+ExecStart=/usr/bin/ssh -N -T -o ServerAliveInterval=120 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -i {{ ssh_identity_file }} -R %i:127.0.0.1:%i {{ reverse_tunnel_user }}@{{ reverse_tunnel_target_host }} -p {{ reverse_tunnel_target_port }}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

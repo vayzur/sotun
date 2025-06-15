@@ -1,0 +1,10 @@
+---
+reverse_tunnel_user: sotun
+
+reverse_tunnel_target_host: "{{ hostvars['internal_edge'].ansible_host }}"
+reverse_tunnel_target_port: "{{ hostvars['internal_edge'].ansible_port }}"
+
+reverse_tunnel_ports:
+  - 8080
+
+ssh_identity_file: "/etc/ssh/sotun_ed25519"

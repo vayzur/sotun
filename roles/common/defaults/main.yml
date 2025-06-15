@@ -1,0 +1,12 @@
+---
+## package list for installation
+packages:
+  - curl
+  - wget
+  - vim
+  - htop
+  - net-tools
+  - iproute2
+  - openssh-client
+  - openssh-server
+  - sudo

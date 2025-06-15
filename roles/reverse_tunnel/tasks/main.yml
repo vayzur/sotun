@@ -1,0 +1,19 @@
+---
+- name: Make systemd unit file for each port
+  template:
+    src: sotun@.service.j2
+    dest: "/etc/systemd/system/sotun@{{ item }}.service"
+    mode: '0644'
+  loop: "{{ reverse_tunnel_ports }}"
+  changed_when: true
+
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Enable and start tunnel services
+  systemd:
+    name: "sotun@{{ item }}"
+    enabled: true
+    state: restarted
+  loop: "{{ reverse_tunnel_ports }}"

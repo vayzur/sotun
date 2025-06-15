@@ -1,0 +1,9 @@
+---
+- import_tasks: keygen.yml
+  when: inventory_hostname == "external_edge"
+
+- import_tasks: push_key.yml
+  when: inventory_hostname == "internal_edge"
+
+- import_tasks: sshd.yml
+  when: inventory_hostname == "internal_edge"

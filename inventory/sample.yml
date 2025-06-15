@@ -1,0 +1,9 @@
+all:
+  hosts:
+    internal_edge:
+      ansible_host: edge1.domain.tld
+    external_edge:
+      ansible_host: edge2.domain.tld
+  vars:
+    ansible_port: 3022
+    ansible_user: root

@@ -1,0 +1,36 @@
+---
+sshd_config:
+  Port: "{{ ansible_port }}"
+  ListenAddress: "{{ ansible_host }}"
+  PermitRootLogin: "without-password"
+  PasswordAuthentication: "no"
+  PermitEmptyPasswords: "no"
+  KbdInteractiveAuthentication: "no"
+  UsePAM: "yes"
+  TCPKeepAlive: "yes"
+  ClientAliveInterval: 120
+  ClientAliveCountMax: 3
+  LoginGraceTime: 10
+  MaxAuthTries: 2
+  MaxSessions: 10
+  KexAlgorithms: "curve25519-sha256"
+  Ciphers: "chacha20-poly1305@openssh.com"
+  MACs: "hmac-sha2-256-etm@openssh.com"
+  AllowTcpForwarding: "yes"
+  GatewayPorts: "yes"
+  PermitOpen: "any"
+  PermitTunnel: "yes"
+  X11Forwarding: "no"
+  LogLevel: "VERBOSE"
+  UseDNS: "no"
+  PrintLastLog: "no"
+  Compression: "no"
+  PrintMotd: "no"
+
+tunnel_user: sotun
+tunnel_user_uid: 1337
+tunnel_user_shell: /usr/sbin/nologin
+tunnel_user_home: "/home/{{ tunnel_user }}"
+
+private_key_path: "/etc/ssh/sotun_ed25519"
+public_key_path: "{{ private_key_path }}.pub"

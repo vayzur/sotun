@@ -8,7 +8,7 @@ sshd_config:
   KbdInteractiveAuthentication: "no"
   UsePAM: "yes"
   TCPKeepAlive: "yes"
-  ClientAliveInterval: 120
+  ClientAliveInterval: 30
   ClientAliveCountMax: 3
   LoginGraceTime: 10
   MaxAuthTries: 2

@@ -1,0 +1,20 @@
+---
+- name: Generate SSH keypair for tunnel if not exist
+  command: >
+    ssh-keygen -t ed25519 -f {{ private_key_path }} -N ''
+  args:
+    creates: "{{ private_key_path }}"
+
+- name: Make .ssh directory
+  file:
+    path: /root/.ssh
+    state: directory
+    mode: 0755
+    owner: root
+    group: root
+
+- name: Make ssh config
+  template:
+    src: ssh_config.j2
+    dest: /root/.ssh/config
+  changed_when: true

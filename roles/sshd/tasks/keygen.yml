@@ -1,6 +1,0 @@
----
-- name: Generate SSH keypair for tunnel if not exist
-  command: >
-    ssh-keygen -t ed25519 -f {{ private_key_path }} -N ''
-  args:
-    creates: "{{ private_key_path }}"

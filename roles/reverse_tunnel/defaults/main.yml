@@ -1,13 +1,5 @@
 ---
-reverse_tunnel_user: sotun
-
-reverse_tunnel_target_host: "{{ hostvars['internal_edge'].ansible_host }}"
-reverse_tunnel_target_port: "{{ hostvars['internal_edge'].ansible_port }}"
+tunnel_user: sotun
 
 reverse_tunnel_ports:
   - 8080
-
-ssh_config:
-  ServerAliveInterval: 5
-  ServerAliveCountMax: 2
-  IdentityFile: "/etc/ssh/sotun_ed25519"

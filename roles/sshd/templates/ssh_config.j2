@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+
+Host {{ tunnel_user }}
+    Hostname {{ hostvars['internal_edge'].ansible_host }}
+    User {{ tunnel_user }}
+    Port {{ hostvars['internal_edge'].ansible_port }}
+    ServerAliveInterval {{ ssh_config.ServerAliveInterval }}
+    ServerAliveCountMax {{ ssh_config.ServerAliveCountMax }}
+    ExitOnForwardFailure {{ ssh_config.ExitOnForwardFailure }}
+    IdentityFile {{ ssh_config.IdentityFile }}
+    ConnectTimeout {{ ssh_config.ConnectTimeout }}
+    BatchMode {{ ssh_config.BatchMode }}
+    StrictHostKeyChecking {{ ssh_config.StrictHostKeyChecking }}
+    UserKnownHostsFile {{ ssh_config.UserKnownHostsFile }}
+    LogLevel {{ ssh_config.LogLevel }}
+    KexAlgorithms {{ ssh_config.KexAlgorithms }}
+    Ciphers {{ ssh_config.Ciphers }}
+    MACs {{ ssh_config.MACs }}
+    Compression {{ ssh_config.Compression }}

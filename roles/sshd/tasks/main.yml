@@ -1,5 +1,5 @@
 ---
-- import_tasks: keygen.yml
+- import_tasks: ssh.yml
   when: inventory_hostname == "external_edge"
 
 - import_tasks: push_key.yml

@@ -1,4 +1,12 @@
 ---
+tunnel_user: sotun
+tunnel_user_uid: 1337
+tunnel_user_shell: /usr/sbin/nologin
+tunnel_user_home: "/home/{{ tunnel_user }}"
+
+private_key_path: "/etc/ssh/sotun_ed25519"
+public_key_path: "{{ private_key_path }}.pub"
+
 sshd_config:
   Port: "{{ ansible_port }}"
   ListenAddress: "{{ ansible_host }}"
@@ -17,21 +25,30 @@ sshd_config:
   Ciphers: "chacha20-poly1305@openssh.com"
   MACs: "hmac-sha2-256-etm@openssh.com"
   AllowTcpForwarding: "yes"
+  AllowAgentForwarding: "no"
+  AllowStreamLocalForwarding: "no"
   GatewayPorts: "yes"
   PermitOpen: "any"
   PermitTunnel: "yes"
   X11Forwarding: "no"
-  LogLevel: "VERBOSE"
+  LogLevel: "ERROR"
   UseDNS: "no"
   PrintLastLog: "no"
   Compression: "no"
   PrintMotd: "no"
   MaxStartups: "100:100:200"
 
-tunnel_user: sotun
-tunnel_user_uid: 1337
-tunnel_user_shell: /usr/sbin/nologin
-tunnel_user_home: "/home/{{ tunnel_user }}"
-
-private_key_path: "/etc/ssh/sotun_ed25519"
-public_key_path: "{{ private_key_path }}.pub"
+ssh_config:
+  ExitOnForwardFailure: "yes"
+  ServerAliveInterval: 5
+  ServerAliveCountMax: 2
+  IdentityFile: "{{ private_key_path }}"
+  ConnectTimeout: 10
+  BatchMode: "yes"
+  StrictHostKeyChecking: "no"
+  UserKnownHostsFile: "/dev/null"
+  LogLevel: "ERROR"
+  KexAlgorithms: "curve25519-sha256"
+  Ciphers: "chacha20-poly1305@openssh.com"
+  MACs: "hmac-sha2-256-etm@openssh.com"
+  Compression: "no"

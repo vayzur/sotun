@@ -1,0 +1,5 @@
+---
+## don't use < 1024 ports
+reverse_tunnel_ports:
+  - 11885
+  - 8080

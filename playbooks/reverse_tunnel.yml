@@ -1,0 +1,5 @@
+---
+- hosts: external_edge
+  become: true
+  roles:
+    - { role: reverse_tunnel, tags: reverse_tunnel }

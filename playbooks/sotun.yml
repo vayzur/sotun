@@ -1,7 +1,6 @@
 ---
-- hosts: all
-  become: true
-  roles:
-    - { role: common, tags: common }
-    - { role: sshd, tags: sshd }
-    - { role: reverse_tunnel, tags: reverse_tunnel, when: inventory_hostname == 'external_edge' }
+- import_playbook: common.yml
+
+- import_playbook: sshd.yml
+
+- import_playbook: reverse_tunnel.yml

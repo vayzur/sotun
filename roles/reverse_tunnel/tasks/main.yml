@@ -10,6 +10,7 @@
 - name: Reload systemd
   systemd:
     daemon_reload: true
+  changed_when: true
 
 - name: Enable and start tunnel services
   systemd:
@@ -17,3 +18,4 @@
     enabled: true
     state: restarted
   loop: "{{ reverse_tunnel_ports }}"
+  changed_when: true

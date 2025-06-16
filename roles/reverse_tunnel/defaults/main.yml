@@ -7,8 +7,7 @@ reverse_tunnel_target_port: "{{ hostvars['internal_edge'].ansible_port }}"
 reverse_tunnel_ports:
   - 8080
 
-
 ssh_config:
-  ServerAliveInterval: 120
-  ServerAliveCountMax: 3
+  ServerAliveInterval: 5
+  ServerAliveCountMax: 2
   IdentityFile: "/etc/ssh/sotun_ed25519"

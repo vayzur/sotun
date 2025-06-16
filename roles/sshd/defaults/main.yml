@@ -8,11 +8,11 @@ sshd_config:
   KbdInteractiveAuthentication: "no"
   UsePAM: "yes"
   TCPKeepAlive: "yes"
-  ClientAliveInterval: 120
-  ClientAliveCountMax: 3
+  ClientAliveInterval: 5
+  ClientAliveCountMax: 2
   LoginGraceTime: 10
   MaxAuthTries: 2
-  MaxSessions: 10
+  MaxSessions: 100
   KexAlgorithms: "curve25519-sha256"
   Ciphers: "chacha20-poly1305@openssh.com"
   MACs: "hmac-sha2-256-etm@openssh.com"
@@ -26,6 +26,7 @@ sshd_config:
   PrintLastLog: "no"
   Compression: "no"
   PrintMotd: "no"
+  MaxStartups: "100:100:200"
 
 tunnel_user: sotun
 tunnel_user_uid: 1337

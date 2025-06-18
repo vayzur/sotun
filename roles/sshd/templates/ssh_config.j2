@@ -4,9 +4,13 @@ Host {{ tunnel_user }}
     Hostname {{ hostvars['internal_edge'].ansible_host }}
     User {{ tunnel_user }}
     Port {{ hostvars['internal_edge'].ansible_port }}
+    ControlMaster {{ ssh_config.ControlMaster }}
+    ControlPath {{ ssh_config.ControlPath }}
+    ControlPersist {{ ssh_config.ControlPersist }}
     ServerAliveInterval {{ ssh_config.ServerAliveInterval }}
     ServerAliveCountMax {{ ssh_config.ServerAliveCountMax }}
     ExitOnForwardFailure {{ ssh_config.ExitOnForwardFailure }}
+    StreamLocalBindUnlink {{ ssh_config.StreamLocalBindUnlink }}
     IdentityFile {{ ssh_config.IdentityFile }}
     ConnectTimeout {{ ssh_config.ConnectTimeout }}
     BatchMode {{ ssh_config.BatchMode }}
@@ -17,3 +21,6 @@ Host {{ tunnel_user }}
     Ciphers {{ ssh_config.Ciphers }}
     MACs {{ ssh_config.MACs }}
     Compression {{ ssh_config.Compression }}
+    VisualHostKey {{ ssh_config.VisualHostKey }}
+    HashKnownHosts {{ ssh_config.HashKnownHosts }}
+    IPQoS {{ ssh_config.IPQoS }}

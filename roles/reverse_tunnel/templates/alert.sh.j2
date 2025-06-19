@@ -1,0 +1,8 @@
+#!/bin/bash
+MSG="$1"
+TOKEN="{{ alerting.telegram.bot_token }}"
+CHAT_ID="{{ alerting.telegram.chat_id }}"
+
+curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+  -d chat_id="$CHAT_ID" \
+  -d text="$MSG" || exit 0

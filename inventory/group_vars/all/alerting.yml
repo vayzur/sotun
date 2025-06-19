@@ -1,0 +1,13 @@
+---
+# Alerting Configuration
+# -------------------------------------------
+# Enable or disable alerting system (default: false)
+alerting:
+  enabled: false
+  telegram:
+    # Set your Telegram Chat ID to receive alerts
+    # Required only if alerting_enabled = true
+    chat_id: 123456789
+    # Set your Telegram Bot Token to send messages
+    # Required only if alerting_enabled = true
+    bot_token: "123456789:ABC-your-token"

@@ -9,7 +9,7 @@ public_key_path: "{{ private_key_path }}.pub"
 
 sshd_config:
   Port: "{{ ansible_port }}"
-  ListenAddress: "{{ ansible_host }}"
+  ListenAddress: "0.0.0.0"
   PermitRootLogin: "without-password"
   PasswordAuthentication: "no"
   PermitEmptyPasswords: "no"
@@ -48,7 +48,7 @@ ssh_config:
   ServerAliveInterval: 3
   ServerAliveCountMax: 2
   IdentityFile: "{{ private_key_path }}"
-  ConnectTimeout: 10
+  ConnectTimeout: 3
   BatchMode: "yes"
   StrictHostKeyChecking: "no"
   UserKnownHostsFile: "/dev/null"

@@ -6,6 +6,7 @@ packages:
   - vim
   - htop
   - net-tools
+  - dnsutils
   - iproute2
   - openssh-client
   - openssh-server

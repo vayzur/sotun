@@ -1,5 +1,5 @@
 [Unit]
-Description=Reverse SSH Tunnel on port %i
+Description=SSH Tunnel {{ tun.name }}
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=20
@@ -23,11 +23,11 @@ LimitNPROC=infinity
 LimitNOFILE=infinity
 LimitMEMLOCK=infinity
 OOMScoreAdjust=-1000
-ExecStart=/usr/bin/ssh -N -T -R %i:127.0.0.1:%i {{ tunnel_user }}
+ExecStart=/usr/bin/ssh -N -T -{{ tun.mode }} {{ tun.local_host }}:{{ tun.local_port }}:{{ tun.remote_host }}:{{ tun.remote_port }} {{ tun.name }}
 {% if alerting.enabled %}
-ExecStartPre=systemd-run --quiet --no-block /opt/sotun-alert.sh "🔄 Tunnel on %i is connecting..."
-ExecStartPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "✅ Tunnel on %i is UP"
-ExecStopPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "❌ Tunnel on %i is DOWN"
+ExecStartPre=systemd-run --quiet --no-block /opt/sotun-alert.sh "🔄 Tunnel {{ tun.name }} is connecting..."
+ExecStartPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "✅ Tunnel {{ tun.name }} is UP"
+ExecStopPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "❌ Tunnel {{ tun.name }} is DOWN"
 {% endif %}
 Restart=always
 RestartSec=0.5

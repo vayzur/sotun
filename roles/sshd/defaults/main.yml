@@ -1,12 +1,4 @@
 ---
-tunnel_user: sotun
-tunnel_user_uid: 1337
-tunnel_user_shell: /usr/sbin/nologin
-tunnel_user_home: "/home/{{ tunnel_user }}"
-
-private_key_path: "/etc/ssh/sotun_ed25519"
-public_key_path: "{{ private_key_path }}.pub"
-
 sshd_config:
   Port: "{{ ansible_port }}"
   ListenAddress: "0.0.0.0"
@@ -15,7 +7,7 @@ sshd_config:
   PermitEmptyPasswords: "no"
   KbdInteractiveAuthentication: "no"
   UsePAM: "yes"
-  TCPKeepAlive: "yes"
+  TCPKeepAlive: "no"
   ClientAliveInterval: 3
   ClientAliveCountMax: 2
   LoginGraceTime: 10
@@ -37,28 +29,6 @@ sshd_config:
   Compression: "yes"
   PrintMotd: "no"
   MaxStartups: "100:30:200"
-  IPQoS: "cs0 cs0"
-
-ssh_config:
-  ControlMaster: "no"
-  ControlPath: "/tmp/ssh-%r@%h:%p"
-  ControlPersist: "10m"
-  ExitOnForwardFailure: "yes"
-  StreamLocalBindUnlink: "yes"
-  ServerAliveInterval: 3
-  ServerAliveCountMax: 2
-  IdentityFile: "{{ private_key_path }}"
-  ConnectTimeout: 3
-  BatchMode: "yes"
-  StrictHostKeyChecking: "no"
-  UserKnownHostsFile: "/dev/null"
-  LogLevel: "ERROR"
-  KexAlgorithms: "curve25519-sha256"
-  Ciphers: "chacha20-poly1305@openssh.com"
-  MACs: "hmac-sha2-256-etm@openssh.com"
-  Compression: "yes"
-  VisualHostKey: "no"
-  HashKnownHosts: "no"
   IPQoS: "cs0 cs0"
 
 # IPQoS defines the DSCP (Differentiated Services Code Point) values for SSH traffic.

@@ -1,0 +1,39 @@
+# Sotun Tunnel Configuration
+# -------------------------------------------
+# Each tunnel defines an SSH forwarding rule between two nodes.
+# Tunnel name must be unique and follow this suggested format:
+#
+#     <client>-to-<server>-<mode>-<local_port>
+#
+#     Examples:
+#       node1-to-node2-L-2052   → Forward from node1 to node2 using -L
+#       node2-to-node1-R-8080   → Reverse from node2 to node1 using -R
+#
+# Fields:
+#   - name         : Unique identifier for this tunnel (used in systemd service name).
+#   - mode         : L (forward) or R (reverse).
+#   - client_node  : Node that will *start* the SSH connection (initiator).
+#   - server_node  : Node that will *receive* the SSH connection (sshd target).
+#   - local_host   : The host to bind on the *client* (usually 0.0.0.0 or 127.0.0.1).
+#   - local_port   : The port to expose on the *client* (source port).
+#   - remote_host  : The target host the tunnel connects to *on the server side*.
+#   - remote_port  : The target port *on the server side*.
+
+tunnels:
+  - name: node1-to-node2-L-2052
+    mode: L
+    client_node: node1
+    server_node: node2
+    local_host: 0.0.0.0
+    local_port: 2052
+    remote_host: 127.0.0.1
+    remote_port: 2052
+
+  - name: node2-to-node1-R-8080
+    mode: R
+    client_node: node2
+    server_node: node1
+    local_host: 0.0.0.0
+    local_port: 8080
+    remote_host: 127.0.0.1
+    remote_port: 8080

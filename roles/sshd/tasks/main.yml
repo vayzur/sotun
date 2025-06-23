@@ -1,9 +1,25 @@
 ---
-- import_tasks: ssh.yml
-  when: inventory_hostname == "external_edge"
+- name: Make sshd override directory
+  file:
+    path: /etc/systemd/system/sshd.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
 
-- import_tasks: push_key.yml
-  when: inventory_hostname == "internal_edge"
+- name: Override sshd service
+  template:
+    src: sshd.override.conf.j2
+    dest: /etc/systemd/system/sshd.service.d/override.conf
+  changed_when: true
+  notify:
+    - Restart sshd
 
-- import_tasks: sshd.yml
-  when: inventory_hostname == "internal_edge"
+- name: Make sshd config
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    backup: true
+  changed_when: true
+  notify:
+    - Restart sshd

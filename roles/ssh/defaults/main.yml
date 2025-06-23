@@ -1,0 +1,22 @@
+---
+ssh_config:
+  ControlMaster: "no"
+  ControlPath: "/tmp/ssh-%r@%h:%p"
+  ControlPersist: "10m"
+  ExitOnForwardFailure: "yes"
+  StreamLocalBindUnlink: "yes"
+  ServerAliveInterval: 3
+  ServerAliveCountMax: 2
+  IdentityFile: "/home/{{ tunnel_user }}/.ssh/sotun_ed25519"
+  ConnectTimeout: 3
+  BatchMode: "yes"
+  StrictHostKeyChecking: "no"
+  UserKnownHostsFile: "/dev/null"
+  LogLevel: "ERROR"
+  KexAlgorithms: "curve25519-sha256"
+  Ciphers: "chacha20-poly1305@openssh.com"
+  MACs: "hmac-sha2-256-etm@openssh.com"
+  Compression: "yes"
+  VisualHostKey: "no"
+  HashKnownHosts: "no"
+  IPQoS: "cs0 cs0"

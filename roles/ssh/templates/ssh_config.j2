@@ -1,9 +1,7 @@
 # {{ ansible_managed }}
 
-Host {{ tunnel_user }}
-    Hostname {{ hostvars['internal_edge'].ansible_host }}
+Host *
     User {{ tunnel_user }}
-    Port {{ hostvars['internal_edge'].ansible_port }}
     ControlMaster {{ ssh_config.ControlMaster }}
     ControlPath {{ ssh_config.ControlPath }}
     ControlPersist {{ ssh_config.ControlPersist }}
@@ -24,3 +22,10 @@ Host {{ tunnel_user }}
     VisualHostKey {{ ssh_config.VisualHostKey }}
     HashKnownHosts {{ ssh_config.HashKnownHosts }}
     IPQoS {{ ssh_config.IPQoS }}
+
+{% for tun in tuns %}
+Host {{ tun.name }}
+    Hostname {{ hostvars[tun.server_node].ansible_host }}
+    Port {{ hostvars[tun.server_node].ansible_port }}
+
+{% endfor %}

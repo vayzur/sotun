@@ -1,6 +1,8 @@
 ---
-- name: Install base packages
-  apt:
-    name: "{{ packages }}"
-    state: present
-    update_cache: yes
+- import_tasks: packages.yml
+
+- import_tasks: users.yml
+
+- import_tasks: ssh_keys.yml
+
+- import_tasks: limits.yml

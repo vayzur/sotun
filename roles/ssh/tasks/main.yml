@@ -1,0 +1,14 @@
+---
+- name: Filter tunnels for this host
+  set_fact:
+    tuns: "{{ tunnels | selectattr('client_node', 'equalto', inventory_hostname) | list }}"
+
+- name: Make ssh config
+  template:
+    src: ssh_config.j2
+    dest: /home/{{ tunnel_user }}/.ssh/config
+    mode: 0644
+    owner: "{{ tunnel_user }}"
+    group: "{{ tunnel_user }}"
+  changed_when: true
+  when: tuns | length > 0

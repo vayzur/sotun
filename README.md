@@ -1,8 +1,8 @@
 # SOTUN
 
-**High Performance Reverse SSH Tunnel Setup Automation**
+**High Performance SSH Tunnel Setup Automation**
 
-Sotun is a automation tool to set up reverse SSH tunnels between an internal (e.g., censored) server and an external (e.g., uncensored) server. It's built for high performance networking, ideal for tunneling services like VPNs or web traffic through difficult environments.
+Sotun is an automation tool to set up SSH tunnels between internal (e.g., censored) and external (e.g., uncensored) Linux servers. It's built for high performance networking and low-latency environments, ideal for tunneling services like VPNs or web traffic through firewalled infrastructure.
 
 ---
 
@@ -10,10 +10,10 @@ Sotun is a automation tool to set up reverse SSH tunnels between an internal (e.
 
 ### Tunnel Setup
 
-You need two Linux-based servers:
+You need two (or more) Linux-based servers:
 
-* **Internal Server** (e.g., located in Iran or behind NAT/firewall)
-* **External Server** (e.g., hosted in outside censorship)
+* **Client Node** (typically inside censorship/NAT)
+* **Server Node** (typically outside censorship)
 
 ### Sotun Runtime Requirements
 
@@ -33,7 +33,7 @@ If you're on **Windows**, use **WSL2** (Ubuntu preferred) as your Ansible contro
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
+````
 
 ---
 
@@ -42,8 +42,8 @@ pip install -r requirements.txt
 Create your inventory file based on this sample:
 
 ```bash
-cp inventory/sample.yml inventory/hosts.yml
-vim inventory/hosts.yml
+cp -r inventory/sample inventory/hosts
+vim inventory/hosts/hosts.yml
 ```
 
 Example:
@@ -51,73 +51,82 @@ Example:
 ```yaml
 all:
   hosts:
-    internal_edge:
+    node1:
       ansible_host: edge1.example.com
-    external_edge:
+    node2:
       ansible_host: edge2.example.com
   vars:
     ansible_user: root
     ansible_port: 22  # Change if you're using a non-standard SSH port
 ```
 
-👉 **Best practice**: use custom SSH ports (not 22) to reduce bot scan attempts.
+👉 **Best practice**: use non-default SSH ports (not 22) to reduce bot scan attempts.
 
 ---
 
-## 🔁 Reverse Tunnel Configuration
+## 🔧 Tunnel Configuration
 
-To forward specific ports from the internal server through the external server, edit:
+Sotun now supports a declarative, flexible DSL format:
 
 ```bash
-vim inventory/group_vars/external_edge/tunnel.yml
+vim inventory/group_vars/all/tunnels.yml
 ```
 
 Example:
 
 ```yaml
-reverse_tunnel_ports:
-  - 8080
-  - 8880
-  - 2052
-```
+tunnels:
+  - name: tun2052
+    mode: L
+    client_node: node1
+    server_node: node2
+    local_host: 0.0.0.0
+    local_port: 2052
+    remote_host: 127.0.0.1
+    remote_port: 2052
 
-This means these ports from `internal_edge` will be exposed on `external_edge`.
+  - name: tun8880
+    mode: R
+    client_node: node2
+    server_node: node1
+    local_host: 0.0.0.0
+    local_port: 8880
+    remote_host: 127.0.0.1
+    remote_port: 8880
+```
 
 ---
 
-## 🛠️ Setup Tunnels
+## 🛠️ Deploy
 
-Once your inventory and tunnel ports are configured, deploy with:
+Once your inventory and tunnel config are ready, deploy with:
 
 ```bash
-ansible-playbook -i inventory/hosts.yml sotun.yml
+ansible-playbook -i inventory/hosts/hosts.yml sotun.yml
 ```
 
-If successful:
+Sotun will:
 
-* Tunnels are active
-* Services are systemd-based for resilience and autostart
+* Install required packages
+* Create the `sotun` user
+* Distribute SSH keys and configs
+* Create and enable `systemd` services for each tunnel
 
 ---
 
 ## ✅ Verification
 
-### On **Internal Edge**:
-
-Check active reverse SSH connections:
+### Check services:
 
 ```bash
-ss -tulpn
+systemctl status sotun@tun8080.service
+systemctl status sotun@tun8880.service
 ```
 
-### On **External Edge**:
-
-Check each forwarded tunnel:
+### Check open ports:
 
 ```bash
-systemctl status sotun@8080.service
-systemctl status sotun@8880.service
-systemctl status sotun@2052.service
+ss -tulnp | grep 2052
 ```
 
 ---
@@ -129,15 +138,15 @@ Sotun works great for tunneling a VPN server like **Xray-Core** or **3x-UI**.
 ### Steps:
 
 1. Deploy tunnels via Sotun
-2. Install the VPN software (e.g., Xray-core) on the **external server**
-3. In your VPN config, replace `server address` with the **internal server IP**
+2. Install the VPN software (e.g., Xray-core) on the **server node**
+3. In your VPN config, replace `server address` with the **client node IP**
 
-   * Because it’s tunneled, the traffic hits the internal server via SSH tunnel
+   * Traffic will reach the internal/censored node through the tunnel
 
 Example:
 
 ```
-Client → Internal Edge (🇮🇷) ⇐ SSH Tunnel ⇒ External Edge (🇩🇪) → Internet
+Client → Node1 (🇮🇷) ⇐ SSH Tunnel ⇒ Node2 (🇩🇪) → Internet
 ```
 
 ---
@@ -148,33 +157,32 @@ Pull requests are welcome. You can:
 
 * Add support for new distros
 * Improve automation or fallback logic
-* Add advanced SSH hardening options
+* Add SSH hardening or autossh-style features
 
-> Please test before submitting and keep the code minimal and production-focused.
+> Please keep the code minimal and production-grade.
 
 ---
 
 ## 🧠 Notes & Best Practices
 
-* This is for **reverse tunneling**, not general SSH proxying
-* Reverse SSH tunnels are resilient against NAT, DPI, and firewalls
-* Use SSH key authentication (avoid passwords in production)
-* Consider using `autossh` or `systemd`-based reconnections (already handled in Sotun)
-* Great for VPN tunneling inside censored environments
+* Sotun supports both **reverse** (`-R`) and **forward** (`-L`) tunnels
+* SSH tunnels are TCP-only
+* Avoid using ports < 1024 unless you configure privileges properly
+* SSH keys are auto-generated once and distributed to all nodes
+* Tunnels are managed via systemd, using real-time priorities
 
 ---
 
 ## ❓FAQ
 
 **Q: Can I forward TCP + UDP?**
-A: SSH tunnels only support TCP. For UDP-based VPNs like WireGuard, use `udptunnel` or `socat`.
+A: SSH only supports TCP. For UDP-based protocols (like WireGuard), consider `udptunnel` or `socat`.
 
 **Q: Can I chain tunnels?**
-A: Yes, but it adds complexity. Start simple.
+A: Yes, but keep it simple unless necessary.
 
-**Q: Can I add more than one internal server?**
-A: Not supported natively yet, but you can duplicate role logic or modify inventory layout.
-
+**Q: Can I use more than two nodes?**
+A: Yes. You can define as many tunnels as you want, with any combination of client/server nodes.
 
 ---
 

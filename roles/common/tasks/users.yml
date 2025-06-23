@@ -1,0 +1,9 @@
+---
+- name: Make SSH-only user for tunneling
+  user:
+    name: "{{ tunnel_user }}"
+    uid: "{{ tunnel_user_uid }}"
+    shell: "{{ tunnel_user_shell }}"
+    create_home: true
+    home: "{{ tunnel_user_home }}"
+    system: no

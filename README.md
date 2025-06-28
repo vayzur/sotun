@@ -120,7 +120,7 @@ Sotun will:
 
 ```bash
 systemctl status sotun@tun8080.service
-systemctl status sotun@tun8880.service
+systemctl status sotun@tun2052.service
 ```
 
 ### Check open ports:
@@ -146,7 +146,7 @@ Sotun works great for tunneling a VPN server like **Xray-Core** or **3x-UI**.
 Example:
 
 ```
-Client → Node1 (🇮🇷) ⇐ SSH Tunnel ⇒ Node2 (🇩🇪) → Internet
+Client → Node1 ⇐ SSH Tunnel ⇒ Node2 → Internet
 ```
 
 ---

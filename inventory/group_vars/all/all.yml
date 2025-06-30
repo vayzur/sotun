@@ -3,4 +3,4 @@ tunnel_user: sotun
 tunnel_user_uid: 1337
 tunnel_user_shell: /usr/sbin/nologin
 
-private_key_path: "/opt/sotun_ed25519"
+private_key_path: "/tmp/sotun_ed25519"

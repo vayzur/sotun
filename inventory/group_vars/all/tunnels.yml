@@ -19,21 +19,21 @@
 #   - remote_host  : The target host the tunnel connects to *on the server side*.
 #   - remote_port  : The target port *on the server side*.
 
-tunnels:
-  - name: node1-to-node2-L-2052
-    mode: L
-    client_node: node1
-    server_node: node2
-    local_host: 0.0.0.0
-    local_port: 2052
-    remote_host: 127.0.0.1
-    remote_port: 2052
+# tunnels:
+#   - name: node1-to-node2-L-2052
+#     mode: L
+#     client_node: node1
+#     server_node: node2
+#     local_host: 0.0.0.0
+#     local_port: 2052
+#     remote_host: 127.0.0.1
+#     remote_port: 2052
 
-  - name: node2-to-node1-R-8080
-    mode: R
-    client_node: node2
-    server_node: node1
-    local_host: 0.0.0.0
-    local_port: 8080
-    remote_host: 127.0.0.1
-    remote_port: 8080
+#   - name: node2-to-node1-R-8080
+#     mode: R
+#     client_node: node2
+#     server_node: node1
+#     local_host: 0.0.0.0
+#     local_port: 8080
+#     remote_host: 127.0.0.1
+#     remote_port: 8080

@@ -11,6 +11,7 @@
 - name: Read private key from control node
   delegate_to: localhost
   run_once: true
+  become: false
   slurp:
     src: "{{ private_key_path }}"
   register: private_key_b64
@@ -18,6 +19,7 @@
 - name: Read public key from control node
   delegate_to: localhost
   run_once: true
+  become: false
   slurp:
     src: "{{ private_key_path }}.pub"
   register: public_key_b64

@@ -2,8 +2,6 @@
 Description=SSH Tunnel {{ tun.name }}
 After=network-online.target
 Wants=network-online.target
-StartLimitIntervalSec=20
-StartLimitBurst=10
 
 [Service]
 User={{ tunnel_user }}
@@ -31,8 +29,10 @@ ExecStartPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "✅ Tunnel {{ 
 ExecStopPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "❌ Tunnel {{ tun.name }} is DOWN"
 {% endif %}
 Restart=always
-RestartSec=0.5
+RestartSec=1
 TimeoutStartSec=3
+StartLimitIntervalSec=0
+StartLimitBurst=0
 
 [Install]
 WantedBy=multi-user.target

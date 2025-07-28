@@ -1,38 +1,61 @@
+# {{ ansible_managed }}
+
 [Unit]
 Description=SSH Tunnel {{ tun.name }}
+
 After=network-online.target
 Wants=network-online.target
 
+StartLimitIntervalSec=10s
+StartLimitBurst=100
+
 [Service]
+Type=simple
 User={{ tunnel_user }}
+
 CPUAccounting=no
 MemoryAccounting=no
 IOAccounting=no
 IPAccounting=no
 TasksAccounting=no
+
 CPUQuota=
 MemoryMax=
+
 CPUSchedulingPolicy=fifo
 CPUSchedulingPriority=98
 IOSchedulingClass=realtime
 IOSchedulingPriority=0
+OOMScoreAdjust=-1000
+
 LimitRTPRIO=99
 LimitRTTIME=infinity
-LimitNPROC=infinity
+LimitCPU=infinity
+LimitFSIZE=infinity
+LimitDATA=infinity
+LimitSTACK=infinity
+LimitCORE=infinity
+LimitRSS=infinity
 LimitNOFILE=infinity
+LimitAS=infinity
+LimitNPROC=infinity
 LimitMEMLOCK=infinity
-OOMScoreAdjust=-1000
+LimitLOCKS=infinity
+LimitSIGPENDING=infinity
+LimitMSGQUEUE=infinity
+
+TimeoutStartSec=3s
+TimeoutStopSec=3s
+Restart=always
+RestartSec=0ms
+WatchdogSec=0
+
 ExecStart=/usr/bin/ssh -N -T -{{ tun.mode }} {{ tun.local_host }}:{{ tun.local_port }}:{{ tun.remote_host }}:{{ tun.remote_port }} {{ tun.name }}
 {% if alerting.enabled %}
 ExecStartPre=systemd-run --quiet --no-block /opt/sotun-alert.sh "🔄 Tunnel {{ tun.name }} is connecting..."
 ExecStartPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "✅ Tunnel {{ tun.name }} is UP"
 ExecStopPost=systemd-run --quiet --no-block /opt/sotun-alert.sh "❌ Tunnel {{ tun.name }} is DOWN"
 {% endif %}
-Restart=always
-RestartSec=1
-TimeoutStartSec=3
-StartLimitIntervalSec=0
-StartLimitBurst=0
 
 [Install]
 WantedBy=multi-user.target

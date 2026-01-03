@@ -1,6 +1,0 @@
----
-- name: Make limits.conf
-  template:
-    src: limits.conf.j2
-    dest: /etc/security/limits.conf
-    backup: true

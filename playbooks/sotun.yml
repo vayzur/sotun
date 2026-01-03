@@ -1,8 +1,6 @@
 ---
 - import_playbook: common.yml
 
-- import_playbook: sysctl.yml
-
 - import_playbook: ssh.yml
 
 - import_playbook: sshd.yml

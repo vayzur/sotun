@@ -151,18 +151,6 @@ Client → Node1 ⇐ SSH Tunnel ⇒ Node2 → Internet
 
 ---
 
-## 🧑‍💻 Contribution
-
-Pull requests are welcome. You can:
-
-* Add support for new distros
-* Improve automation or fallback logic
-* Add SSH hardening or autossh-style features
-
-> Please keep the code minimal and production-grade.
-
----
-
 ## 🧠 Notes & Best Practices
 
 * Sotun supports both **reverse** (`-R`) and **forward** (`-L`) tunnels

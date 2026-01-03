@@ -1,3 +1,0 @@
----
-- name: Reload sysctl
-  command: sysctl -e -p /etc/sysctl.d/90-sotun.conf

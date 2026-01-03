@@ -30,22 +30,3 @@ sshd_config:
   PrintMotd: "no"
   MaxStartups: "100:30:200"
   IPQoS: "cs0 cs0"
-
-# IPQoS defines the DSCP (Differentiated Services Code Point) values for SSH traffic.
-# It accepts two space-separated values:
-#   - First: for interactive traffic (e.g., login, shell input, TCP ACKs)
-#   - Second: for bulk traffic (e.g., file transfers, port forwarding, tunnels)
-#
-# Common values:
-#   - lowdelay     => 0x10 (DSCP AF41)  : for low latency
-#   - throughput   => 0x08 (DSCP AF21)  : for high throughput
-#   - reliability  => 0x04              : for high reliability
-#   - cs0 - cs7    => Class selectors
-#   - af11, af21, ef, etc => Explicit DSCP classes
-#
-# If only one value is given, it applies only to interactive traffic.
-# If unset, default is: "lowdelay throughput"
-#
-# Example:
-#   IPQoS lowdelay throughput   # Interactive: low latency, Bulk: high throughput
-#   IPQoS lowdelay lowdelay     # Force low latency for everything (e.g., gaming tunnels)

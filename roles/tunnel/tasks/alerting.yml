@@ -1,8 +1,0 @@
----
-- name: Make Alerting script
-  template:
-    src: alert.sh.j2
-    dest: /opt/sotun-alert.sh
-    mode: 0700
-    owner: root
-    group: root

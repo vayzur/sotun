@@ -42,8 +42,8 @@ pip install -r requirements.txt
 Create your inventory file based on this sample:
 
 ```bash
-cp -r inventory/sample inventory/hosts
-vim inventory/hosts/hosts.yml
+cp -r inventory/sample.yml inventory/hosts.yml
+vim inventory/hosts.yml
 ```
 
 Example:
@@ -52,9 +52,9 @@ Example:
 all:
   hosts:
     node1:
-      ansible_host: edge1.example.com
+      ansible_host: node1.example.com
     node2:
-      ansible_host: edge2.example.com
+      ansible_host: node2.example.com
   vars:
     ansible_user: root
     ansible_port: 22  # Change if you're using a non-standard SSH port
@@ -102,7 +102,7 @@ tunnels:
 Once your inventory and tunnel config are ready, deploy with:
 
 ```bash
-ansible-playbook -i inventory/hosts/hosts.yml sotun.yml
+ansible-playbook -i inventory/hosts.yml sotun.yml
 ```
 
 Sotun will:
@@ -131,15 +131,15 @@ ss -tulnp | grep 2052
 
 ---
 
-## 🌐 Using with a VPN
+## 🌐 Using with a VPN/Proxy
 
-Sotun works great for tunneling a VPN server like **Xray-Core** or **3x-UI**.
+Sotun works great for tunneling a VPN/Proxy server like **Xray-Core**.
 
 ### Steps:
 
 1. Deploy tunnels via Sotun
-2. Install the VPN software (e.g., Xray-core) on the **server node**
-3. In your VPN config, replace `server address` with the **client node IP**
+2. Install the VPN/Proxy software (e.g., Xray-core) on the **server node**
+3. In your config, replace `server address` with the **client node IP**
 
    * Traffic will reach the internal/censored node through the tunnel
 

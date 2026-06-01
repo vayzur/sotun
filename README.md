@@ -2,8 +2,8 @@
 
 minimal reverse ssh tunnel manager.
 
-sotun sets up a local socks5 proxy via `ssh -D` and forwards it to a remote node
-behind censorship using `ssh -R`. two systemd services per tunnel, fully automatic restart.
+sotun manages ssh tunnels as systemd services with automatic restart.
+three tunnel types: socks5 proxy (`ssh -D`), reverse tunnel (`ssh -R`), local forward (`ssh -L`).
 
 ---
 
@@ -24,6 +24,10 @@ you have two nodes:
 the exit node opens a local socks5 proxy (`ssh -D`) and then pushes that port
 to the restricted node over a reverse ssh tunnel (`ssh -R`).
 apps on the restricted node use `127.0.0.1:1080` as a socks5 proxy.
+
+> **note:** sotun is symmetric. either node can run the ssh process — whoever has
+> better connectivity initiates. the noun (`tunnel` vs `forward`) describes what
+> the tunnel *does*, not who runs it.
 
 ---
 
@@ -112,7 +116,7 @@ arguments:
 
 ## step 5 — add a tunnel
 
-the tunnel runs `ssh -R` to forward the proxy port to the restricted node.
+the tunnel runs `ssh -R` to push a port to the restricted node.
 
 ```bash
 sudo sotun tunnel add 1080 root@203.0.113.10 22
@@ -125,6 +129,46 @@ arguments:
 
 after this, `127.0.0.1:1080` on the restricted node is a working socks5 proxy.
 
+### custom addresses (advanced)
+
+by default, both ends bind on `127.0.0.1`. to specify exact addresses use the full spec:
+
+```
+<laddr>:<lport>:<raddr>:<rport>
+```
+
+example — expose a vless/ws running on `0.0.0.0:443` of the exit node directly on the restricted node:
+
+```bash
+sudo sotun tunnel add 127.0.0.1:1080:0.0.0.0:443 root@203.0.113.10 22
+```
+
+this runs `ssh -R 127.0.0.1:1080:0.0.0.0:443` — the restricted node gets `127.0.0.1:1080`
+which maps straight to the exit node's `0.0.0.0:443`.
+
+---
+
+## forward tunnels (ssh -L)
+
+`sotun forward` pulls a port *from* the remote node to this node via `ssh -L`.
+use this when the restricted node has better connectivity and initiates the connection,
+or when you want to expose something on the remote side locally.
+
+```bash
+sudo sotun forward add 1080 root@203.0.113.10 22
+```
+
+this runs `ssh -L 127.0.0.1:1080:127.0.0.1:1080` — port 1080 on the remote node
+is now accessible as `127.0.0.1:1080` on this node.
+
+full spec works here too:
+
+```bash
+sudo sotun forward add 127.0.0.1:8080:127.0.0.1:80 root@203.0.113.10 22
+```
+
+> **tunnel vs forward:** `tunnel` pushes a port to the remote (`ssh -R`). `forward` pulls a port from the remote (`ssh -L`). both run `ssh` from this node.
+
 ---
 
 ## listing what you have
@@ -132,6 +176,7 @@ after this, `127.0.0.1:1080` on the restricted node is a working socks5 proxy.
 ```bash
 sudo sotun proxy list
 sudo sotun tunnel list
+sudo sotun forward list
 ```
 
 example output:
@@ -141,7 +186,10 @@ proxies:
   port 1080    root@127.0.0.1:22  [active]
 
 tunnels:
-  port 1080    root@203.0.113.10:22  [active]
+  -R 127.0.0.1:1080:127.0.0.1:1080    root@203.0.113.10:22  [active]
+
+forwards:
+  -L 127.0.0.1:8080:127.0.0.1:80      root@203.0.113.10:22  [active]
 ```
 
 ---
@@ -149,22 +197,27 @@ tunnels:
 ## start / stop / restart
 
 ```bash
-sudo sotun proxy  start   1080
-sudo sotun proxy  stop    1080
-sudo sotun proxy  restart 1080
+sudo sotun proxy   start   1080
+sudo sotun proxy   stop    1080
+sudo sotun proxy   restart 1080
 
-sudo sotun tunnel start   1080
-sudo sotun tunnel stop    1080
-sudo sotun tunnel restart 1080
+sudo sotun tunnel  start   1080
+sudo sotun tunnel  stop    1080
+sudo sotun tunnel  restart 1080
+
+sudo sotun forward start   1080
+sudo sotun forward stop    1080
+sudo sotun forward restart 1080
 ```
 
 ---
 
-## remove a tunnel
+## remove
 
 ```bash
-sudo sotun tunnel del 1080
-sudo sotun proxy  del 1080
+sudo sotun tunnel  del 1080
+sudo sotun forward del 1080
+sudo sotun proxy   del 1080
 ```
 
 this stops, disables, and deletes the service and config for that port.
@@ -187,22 +240,16 @@ downloads and installs the latest version of sotun from github.
 sudo sotun uninstall
 ```
 
-stops and removes all proxies and tunnels, deletes all services and config files,
+stops and removes all proxies, tunnels, and forwards, deletes all services and config files,
 and removes the `sotun` binary.
 
 ---
 
 ## port restrictions
 
-sotun enforces different port validation rules depending on context:
-
-- **listening port** (`<port>` in `proxy add` and `tunnel add`): must be **1024-65535**
-  - this is the local port where the proxy listens or tunnel forwards
-  - restricted to prevent binding on privileged ports without special handling
-
-- **ssh port** (`<ssh-port>` in `proxy add` and `tunnel add`): must be **1-65535**
-  - this is the sshd port on the **remote host**
-  - no lower limit, allowing any valid port number (including 1-1023) used by remote sshd
+- **listening port** (`<port>` or `<lport>`): must be **1024-65535** — this is the port that binds on this node
+- **remote port** (`<rport>` in full spec): must be **1-65535** — it binds on the remote, any port is valid
+- **ssh port** (`<ssh-port>`): must be **1-65535** — the sshd port on the remote host
 
 ---
 
@@ -218,17 +265,26 @@ sotun proxy start   <port>
 sotun proxy stop    <port>
 sotun proxy restart <port>
 
-sotun tunnel add <port> <user@host> <ssh-port>
+sotun tunnel add <spec> <user@host> <ssh-port>
 sotun tunnel del <port>
 sotun tunnel list
 sotun tunnel start   <port>
 sotun tunnel stop    <port>
 sotun tunnel restart <port>
 
+sotun forward add <spec> <user@host> <ssh-port>
+sotun forward del <port>
+sotun forward list
+sotun forward start   <port>
+sotun forward stop    <port>
+sotun forward restart <port>
+
 sotun update
 sotun uninstall
 sotun help
 ```
+
+where `<spec>` is either `<port>` or `<laddr>:<lport>:<raddr>:<rport>`.
 
 ---
 
@@ -269,7 +325,8 @@ curl --socks5 127.0.0.1:1080 ifconfig.io
 | `/usr/local/bin/sotun` | the helper binary |
 | `/etc/sotun/proxy/<port>` | env config for each proxy |
 | `/etc/sotun/tunnel/<port>` | env config for each tunnel |
+| `/etc/sotun/forward/<port>` | env config for each forward |
 | `/etc/systemd/system/proxy@.service` | systemd template for proxies |
 | `/etc/systemd/system/tunnel@.service` | systemd template for tunnels |
+| `/etc/systemd/system/forward@.service` | systemd template for forwards |
 | `~/.ssh/id_ed25519_sotun` | dedicated ssh key |
-

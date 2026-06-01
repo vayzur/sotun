@@ -1,0 +1,847 @@
+#!/usr/bin/env bash
+# sotun — ssh tunnel manager
+# https://github.com/vayzur/sotun
+
+set -euo pipefail
+
+VERSION="0.3.0"
+CONF_DIR=/etc/sotun
+SSH_KEY=~/.ssh/id_ed25519_sotun
+SYSTEMD_DIR=/etc/systemd/system
+PROXY_CONF_DIR="$CONF_DIR/proxy"
+PUSH_CONF_DIR="$CONF_DIR/push"
+TUNNEL_CONF_DIR="$CONF_DIR/tunnel"
+FORWARD_CONF_DIR="$CONF_DIR/forward"
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+RESET='\033[0m'
+
+info()  { printf "${GREEN}[info]${RESET} %s\n" "$*"; }
+err()   { printf "${RED}[err]${RESET} %s\n" "$*" >&2; }
+warn()  { printf "${YELLOW}[warn]${RESET} %s\n" "$*"; }
+
+need_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    err "this command requires root. run with sudo."
+    exit 1
+  fi
+}
+
+port_in_use() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn "sport = :$1" 2>/dev/null | sed -n '2,$p' | grep -q .
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | grep -q ":$1 "
+  else
+    return 1
+  fi
+}
+
+valid_listen_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+}
+
+valid_ssh_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+valid_name() {
+  [[ "$1" =~ ^[a-z][a-z0-9_-]*$ ]]
+}
+
+require_listen_port() {
+  if ! valid_listen_port "$1"; then
+    err "invalid port '$1'. must be a number between 1024 and 65535."
+    exit 1
+  fi
+}
+
+require_ssh_port() {
+  if ! valid_ssh_port "$1"; then
+    err "invalid ssh port '$1'. must be a number between 1 and 65535."
+    exit 1
+  fi
+}
+
+require_name() {
+  if ! valid_name "$1"; then
+    err "invalid name '$1'. must start with a letter and contain only [a-z0-9_-]."
+    exit 1
+  fi
+}
+
+# parse_spec <spec>
+# accepts either a bare port or laddr:lport:raddr:rport
+# sets SPEC_LADDR SPEC_LPORT SPEC_RADDR SPEC_RPORT
+parse_spec() {
+  if [[ "$1" =~ ^[0-9]+$ ]]; then
+    require_listen_port "$1"
+    SPEC_LADDR=127.0.0.1
+    SPEC_LPORT="$1"
+    SPEC_RADDR=127.0.0.1
+    SPEC_RPORT="$1"
+  elif [[ "$1" =~ ^([^:]+):([0-9]+):([^:]+):([0-9]+)$ ]]; then
+    SPEC_LADDR="${BASH_REMATCH[1]}"
+    SPEC_LPORT="${BASH_REMATCH[2]}"
+    SPEC_RADDR="${BASH_REMATCH[3]}"
+    SPEC_RPORT="${BASH_REMATCH[4]}"
+    require_listen_port "$SPEC_LPORT"
+    require_ssh_port "$SPEC_RPORT"
+  else
+    err "invalid spec '$1'. use <port> or <laddr>:<lport>:<raddr>:<rport>"
+    exit 1
+  fi
+}
+
+# next_name <prefix> <conf_dir>
+# finds the lowest unused tN / fN name in conf_dir
+next_name() {
+  local prefix="$1"
+  local dir="$2"
+  local i=0
+  while [ -f "$dir/${prefix}${i}" ]; do
+    i=$(( i + 1 ))
+  done
+  echo "${prefix}${i}"
+}
+
+reload_daemon() {
+  systemctl daemon-reload
+}
+
+# install a systemd template unit if it does not already exist
+write_proxy_template() {
+  local unit="$SYSTEMD_DIR/proxy@.service"
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun local socks5 proxy (port %i)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/proxy/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -D 127.0.0.1:${PROXY_PORT} \
+  ${PROXY_USER}@${PROXY_HOST} \
+  -p ${PROXY_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -o NoHostAuthenticationForLocalhost=yes \
+  -i /root/.ssh/id_ed25519_sotun
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+ensure_proxy_template() {
+  [ -f "$SYSTEMD_DIR/proxy@.service" ] && return 0
+  write_proxy_template
+}
+
+write_push_template() {
+  local unit="$SYSTEMD_DIR/push@.service"
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun reverse ssh push (%i)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/push/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -R ${PUSH_RADDR}:${PUSH_RPORT}:${PUSH_LADDR}:${PUSH_LPORT} \
+  ${PUSH_USER}@${PUSH_HOST} \
+  -p ${PUSH_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -i /root/.ssh/id_ed25519_sotun
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+ensure_push_template() {
+  [ -f "$SYSTEMD_DIR/push@.service" ] && return 0
+  write_push_template
+}
+
+write_tunnel_template() {
+  local unit="$SYSTEMD_DIR/tunnel@.service"
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun L3 ssh tunnel (%i)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/tunnel/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -w ${TUNNEL_LOCAL_ID}:${TUNNEL_REMOTE_ID} \
+  ${TUNNEL_USER}@${TUNNEL_HOST} \
+  -p ${TUNNEL_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -i /root/.ssh/id_ed25519_sotun
+ExecStartPost=/bin/bash -c 'timeout=0; while [ ! -d "/sys/class/net/tun${TUNNEL_LOCAL_ID}" ] && [ $timeout -lt 50 ]; do sleep 0.1; timeout=$((timeout+1)); done; [ -d "/sys/class/net/tun${TUNNEL_LOCAL_ID}" ] && /usr/bin/ip addr add ${TUNNEL_LOCAL_IP}/30 dev tun${TUNNEL_LOCAL_ID} && /usr/bin/ip link set tun${TUNNEL_LOCAL_ID} up'
+ExecStartPost=/usr/bin/ssh -T -i /root/.ssh/id_ed25519_sotun -p ${TUNNEL_SSH_PORT} -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${TUNNEL_USER}@${TUNNEL_HOST} "/usr/bin/ip addr add ${TUNNEL_REMOTE_IP}/30 dev tun${TUNNEL_REMOTE_ID} && /usr/bin/ip link set tun${TUNNEL_REMOTE_ID} up"
+ExecStopPost=/usr/bin/ip link set tun${TUNNEL_LOCAL_ID} down
+ExecStopPost=/usr/bin/ip addr del ${TUNNEL_LOCAL_IP}/30 dev tun${TUNNEL_LOCAL_ID}
+ExecStopPost=/usr/bin/ssh -T -i /root/.ssh/id_ed25519_sotun -p ${TUNNEL_SSH_PORT} -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 ${TUNNEL_USER}@${TUNNEL_HOST} "/usr/bin/ip link set tun${TUNNEL_REMOTE_ID} down && /usr/bin/ip addr del ${TUNNEL_REMOTE_IP}/30 dev tun${TUNNEL_REMOTE_ID}"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+ensure_tunnel_template() {
+  [ -f "$SYSTEMD_DIR/tunnel@.service" ] && return 0
+  write_tunnel_template
+}
+
+write_forward_template() {
+  local unit="$SYSTEMD_DIR/forward@.service"
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun local forward ssh tunnel (%i)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/forward/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -L ${FORWARD_LADDR}:${FORWARD_LPORT}:${FORWARD_RADDR}:${FORWARD_RPORT} \
+  ${FORWARD_USER}@${FORWARD_HOST} \
+  -p ${FORWARD_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -i /root/.ssh/id_ed25519_sotun
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+ensure_forward_template() {
+  [ -f "$SYSTEMD_DIR/forward@.service" ] && return 0
+  write_forward_template
+}
+
+cmd_init() {
+  need_root
+  local key="$SSH_KEY"
+  local pub="${key}.pub"
+
+  if [ -f "$key" ]; then
+    warn "key already exists at $key — skipping generation."
+  else
+    ssh-keygen -t ed25519 -f "$key" -N "" -q
+    info "ssh key created at $key"
+
+    # add to authorized_keys of current user (root when running with sudo)
+    local authkeys
+    authkeys="$(eval echo ~root)/.ssh/authorized_keys"
+    mkdir -p "$(dirname "$authkeys")"
+    chmod 700 "$(dirname "$authkeys")"
+    touch "$authkeys"
+    chmod 600 "$authkeys"
+
+    local pubkey
+    pubkey="$(cat "$pub")"
+    if ! grep -qF "$pubkey" "$authkeys" 2>/dev/null; then
+      echo "$pubkey" >> "$authkeys"
+      info "public key added to $authkeys"
+    fi
+  fi
+
+  echo ""
+  warn "important: add this public key to the authorized_keys on the remote node:"
+  echo ""
+  cat "${key}.pub"
+  echo ""
+}
+
+cmd_proxy_add() {
+  # sotun proxy add <port> <user@host> <ssh-port>
+  need_root
+  local port="$1"
+  local userhost="$2"
+  local ssh_port="$3"
+  
+  # parse user@host
+  require_listen_port "$port"
+  require_ssh_port "$ssh_port"
+
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  if port_in_use "$port"; then
+    err "port $port is already in use. pick a different port."
+    exit 1
+  fi
+
+  if [ -f "$PROXY_CONF_DIR/$port" ]; then
+    err "proxy on port $port already exists. delete it first with: sotun proxy del $port"
+    exit 1
+  fi
+
+  ensure_proxy_template
+  mkdir -p "$PROXY_CONF_DIR"
+
+  cat > "$PROXY_CONF_DIR/$port" <<EOF
+PROXY_PORT=$port
+PROXY_USER=$user
+PROXY_HOST=$host
+PROXY_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "proxy@${port}.service"
+  info "proxy@${port} added and started (socks5 on 127.0.0.1:${port})"
+}
+
+cmd_proxy_del() {
+  need_root
+  local port="$1"
+  require_listen_port "$port"
+
+  if ! [ -f "$PROXY_CONF_DIR/$port" ]; then
+    err "no proxy found for port $port."
+    exit 1
+  fi
+
+  systemctl stop    "proxy@${port}.service" 2>/dev/null || true
+  systemctl disable "proxy@${port}.service" 2>/dev/null || true
+  rm -f "$PROXY_CONF_DIR/$port"
+  info "proxy@${port} stopped, disabled, and removed"
+}
+
+cmd_proxy_list() {
+  echo "proxies:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local port
+    port="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "proxy@${port}.service" 2>/dev/null || echo inactive)"
+    printf "  port %-6s  %s@%s:%s  [%s]\n" "$port" "$PROXY_USER" "$PROXY_HOST" "$PROXY_SSH_PORT" "$state"
+    found=1
+  done < <(find "$PROXY_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_proxy_start()   { need_root; require_listen_port "$1"; systemctl start   "proxy@${1}.service"; info "proxy@${1} started"; }
+cmd_proxy_stop()    { need_root; require_listen_port "$1"; systemctl stop    "proxy@${1}.service"; info "proxy@${1} stopped"; }
+cmd_proxy_restart() { need_root; require_listen_port "$1"; systemctl restart "proxy@${1}.service"; info "proxy@${1} restarted"; }
+
+cmd_push_add() {
+  # sotun push add <spec> <user@host> <ssh-port> [name]
+  # spec: <port> or <laddr>:<lport>:<raddr>:<rport>
+  need_root
+  local spec="$1"
+  local userhost="$2"
+  local ssh_port="$3"
+  local name="${4:-}"
+
+  parse_spec "$spec"
+  require_ssh_port "$ssh_port"
+
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  ensure_push_template
+  mkdir -p "$PUSH_CONF_DIR"
+
+  if [ -z "$name" ]; then
+    name="$(next_name p "$PUSH_CONF_DIR")"
+  else
+    require_name "$name"
+    if [ -f "$PUSH_CONF_DIR/$name" ]; then
+      err "push '$name' already exists. delete it first with: sotun push del $name"
+      exit 1
+    fi
+  fi
+
+  cat > "$PUSH_CONF_DIR/$name" <<EOF
+PUSH_LADDR=$SPEC_LADDR
+PUSH_LPORT=$SPEC_LPORT
+PUSH_RADDR=$SPEC_RADDR
+PUSH_RPORT=$SPEC_RPORT
+PUSH_USER=$user
+PUSH_HOST=$host
+PUSH_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "push@${name}.service"
+  info "push '$name' added and started (-R ${SPEC_RADDR}:${SPEC_RPORT}:${SPEC_LADDR}:${SPEC_LPORT} → ${userhost})"
+}
+
+cmd_push_del() {
+  need_root
+  local name="$1"
+  require_name "$name"
+
+  if ! [ -f "$PUSH_CONF_DIR/$name" ]; then
+    err "no push found with name '$name'."
+    exit 1
+  fi
+
+  systemctl stop    "push@${name}.service" 2>/dev/null || true
+  systemctl disable "push@${name}.service" 2>/dev/null || true
+  rm -f "$PUSH_CONF_DIR/$name"
+  info "push '$name' stopped, disabled, and removed"
+}
+
+cmd_push_list() {
+  echo "pushes:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local name
+    name="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "push@${name}.service" 2>/dev/null || echo inactive)"
+    printf "  %-6s  -R %-35s  %s@%s:%s  [%s]\n" \
+      "$name" \
+      "${PUSH_RADDR}:${PUSH_RPORT}:${PUSH_LADDR}:${PUSH_LPORT}" \
+      "$PUSH_USER" "$PUSH_HOST" "$PUSH_SSH_PORT" "$state"
+    found=1
+  done < <(find "$PUSH_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_push_start()   { need_root; require_name "$1"; systemctl start   "push@${1}.service"; info "push '$1' started"; }
+cmd_push_stop()    { need_root; require_name "$1"; systemctl stop    "push@${1}.service"; info "push '$1' stopped"; }
+cmd_push_restart() { need_root; require_name "$1"; systemctl restart "push@${1}.service"; info "push '$1' restarted"; }
+
+cmd_tunnel_add() {
+  # sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]
+  need_root
+  local local_id="$1"
+  local remote_id="$2"
+  local local_ip="$3"
+  local remote_ip="$4"
+  local userhost="$5"
+  local ssh_port="$6"
+  local name="${7:-}"
+
+  require_ssh_port "$ssh_port"
+
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  ensure_tunnel_template
+  mkdir -p "$TUNNEL_CONF_DIR"
+
+  if [ -z "$name" ]; then
+    name="$(next_name t "$TUNNEL_CONF_DIR")"
+  else
+    require_name "$name"
+    if [ -f "$TUNNEL_CONF_DIR/$name" ]; then
+      err "tunnel '$name' already exists. delete it first with: sotun tunnel del $name"
+      exit 1
+    fi
+  fi
+
+  cat > "$TUNNEL_CONF_DIR/$name" <<EOF
+TUNNEL_LOCAL_ID=$local_id
+TUNNEL_REMOTE_ID=$remote_id
+TUNNEL_LOCAL_IP=$local_ip
+TUNNEL_REMOTE_IP=$remote_ip
+TUNNEL_USER=$user
+TUNNEL_HOST=$host
+TUNNEL_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "tunnel@${name}.service"
+  info "tunnel '$name' added and started (-w ${local_id}:${remote_id} → ${userhost})"
+}
+
+cmd_tunnel_del() {
+  need_root
+  local name="$1"
+  require_name "$name"
+
+  if ! [ -f "$TUNNEL_CONF_DIR/$name" ]; then
+    err "no tunnel found with name '$name'."
+    exit 1
+  fi
+
+  systemctl stop    "tunnel@${name}.service" 2>/dev/null || true
+  systemctl disable "tunnel@${name}.service" 2>/dev/null || true
+  rm -f "$TUNNEL_CONF_DIR/$name"
+  info "tunnel '$name' stopped, disabled, and removed"
+}
+
+cmd_tunnel_list() {
+  echo "tunnels:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local name
+    name="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "tunnel@${name}.service" 2>/dev/null || echo inactive)"
+    printf "  %-6s  -w %-10s  %s@%s:%s  [%s]\n" \
+      "$name" \
+      "${TUNNEL_LOCAL_ID}:${TUNNEL_REMOTE_ID}" \
+      "$TUNNEL_USER" "$TUNNEL_HOST" "$TUNNEL_SSH_PORT" "$state"
+    found=1
+  done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_tunnel_start()   { need_root; require_name "$1"; systemctl start   "tunnel@${1}.service"; info "tunnel '$1' started"; }
+cmd_tunnel_stop()    { need_root; require_name "$1"; systemctl stop    "tunnel@${1}.service"; info "tunnel '$1' stopped"; }
+cmd_tunnel_restart() { need_root; require_name "$1"; systemctl restart "tunnel@${1}.service"; info "tunnel '$1' restarted"; }
+
+cmd_forward_add() {
+  # sotun forward add <spec> <user@host> <ssh-port> [name]
+  # spec: <port> or <laddr>:<lport>:<raddr>:<rport>
+  need_root
+  local spec="$1"
+  local userhost="$2"
+  local ssh_port="$3"
+  local name="${4:-}"
+
+  parse_spec "$spec"
+  require_ssh_port "$ssh_port"
+
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  if port_in_use "$SPEC_LPORT"; then
+    err "port $SPEC_LPORT is already in use. pick a different port."
+    exit 1
+  fi
+
+  ensure_forward_template
+  mkdir -p "$FORWARD_CONF_DIR"
+
+  if [ -z "$name" ]; then
+    name="$(next_name f "$TUNNEL_CONF_DIR")"
+  else
+    require_name "$name"
+    if [ -f "$FORWARD_CONF_DIR/$name" ]; then
+      err "forward '$name' already exists. delete it first with: sotun forward del $name"
+      exit 1
+    fi
+  fi
+
+  cat > "$FORWARD_CONF_DIR/$name" <<EOF
+FORWARD_LADDR=$SPEC_LADDR
+FORWARD_LPORT=$SPEC_LPORT
+FORWARD_RADDR=$SPEC_RADDR
+FORWARD_RPORT=$SPEC_RPORT
+FORWARD_USER=$user
+FORWARD_HOST=$host
+FORWARD_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "forward@${name}.service"
+  info "forward '$name' added and started (-L ${SPEC_LADDR}:${SPEC_LPORT}:${SPEC_RADDR}:${SPEC_RPORT} → ${userhost})"
+}
+
+cmd_forward_del() {
+  need_root
+  local name="$1"
+  require_name "$name"
+
+  if ! [ -f "$FORWARD_CONF_DIR/$name" ]; then
+    err "no forward found with name '$name'."
+    exit 1
+  fi
+
+  systemctl stop    "forward@${name}.service" 2>/dev/null || true
+  systemctl disable "forward@${name}.service" 2>/dev/null || true
+  rm -f "$FORWARD_CONF_DIR/$name"
+  info "forward '$name' stopped, disabled, and removed"
+}
+
+cmd_forward_list() {
+  echo "forwards:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local name
+    name="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "forward@${name}.service" 2>/dev/null || echo inactive)"
+    printf "  %-6s  -L %-35s  %s@%s:%s  [%s]\n" \
+      "$name" \
+      "${FORWARD_LADDR}:${FORWARD_LPORT}:${FORWARD_RADDR}:${FORWARD_RPORT}" \
+      "$FORWARD_USER" "$FORWARD_HOST" "$FORWARD_SSH_PORT" "$state"
+    found=1
+  done < <(find "$FORWARD_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_forward_start()   { need_root; require_name "$1"; systemctl start   "forward@${1}.service"; info "forward '$1' started"; }
+cmd_forward_stop()    { need_root; require_name "$1"; systemctl stop    "forward@${1}.service"; info "forward '$1' stopped"; }
+cmd_forward_restart() { need_root; require_name "$1"; systemctl restart "forward@${1}.service"; info "forward '$1' restarted"; }
+
+cmd_update() {
+  need_root
+  local url="https://raw.githubusercontent.com/vayzur/sotun/main/sotun"
+  local tmp
+  tmp="$(mktemp)"
+  info "downloading latest sotun..."
+  if ! curl -fsSL "$url" -o "$tmp"; then
+    err "failed to download from $url"
+    rm -f "$tmp"
+    exit 1
+  fi
+  chmod +x "$tmp"
+  install -m 0755 "$tmp" /usr/local/bin/sotun
+  rm -f "$tmp"
+  info "sotun binary updated"
+  write_proxy_template
+  write_push_template
+  write_tunnel_template
+  write_forward_template
+  info "systemd templates updated"
+  info "sotun updated to latest version"
+}
+
+cmd_uninstall() {
+  need_root
+  warn "stopping and removing all proxy, push, tunnel, and forward services..."
+
+  # stop/disable/remove all proxy instances
+  while IFS= read -r -d '' f; do
+    local port; port="$(basename "$f")"
+    systemctl stop    "proxy@${port}.service" 2>/dev/null || true
+    systemctl disable "proxy@${port}.service" 2>/dev/null || true
+  done < <(find "$PROXY_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  # stop/disable/remove all push instances
+  while IFS= read -r -d '' f; do
+    local name; name="$(basename "$f")"
+    systemctl stop    "push@${name}.service" 2>/dev/null || true
+    systemctl disable "push@${name}.service" 2>/dev/null || true
+  done < <(find "$PUSH_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  # stop/disable/remove all tunnel instances
+  while IFS= read -r -d '' f; do
+    local name; name="$(basename "$f")"
+    systemctl stop    "tunnel@${name}.service" 2>/dev/null || true
+    systemctl disable "tunnel@${name}.service" 2>/dev/null || true
+  done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  # stop/disable/remove all forward instances
+  while IFS= read -r -d '' f; do
+    local name; name="$(basename "$f")"
+    systemctl stop    "forward@${name}.service" 2>/dev/null || true
+    systemctl disable "forward@${name}.service" 2>/dev/null || true
+  done < <(find "$FORWARD_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  rm -f "$SYSTEMD_DIR/proxy@.service" "$SYSTEMD_DIR/push@.service" "$SYSTEMD_DIR/tunnel@.service" "$SYSTEMD_DIR/forward@.service"
+  reload_daemon
+  rm -rf "$CONF_DIR"
+  rm -f /usr/local/bin/sotun
+  info "sotun fully removed"
+}
+
+cmd_help() {
+  cat <<EOF
+
+sotun v${VERSION} — ssh tunnel manager
+https://github.com/vayzur/sotun
+
+usage:
+  sotun init                                              prepare this node (generate ssh key)
+
+  sotun proxy add <port> <user@host> <ssh-port>           add a local socks5 proxy via ssh -D
+  sotun proxy del <port>                                   remove a proxy
+  sotun proxy list                                         list all proxies
+  sotun proxy start   <port>
+  sotun proxy stop    <port>
+  sotun proxy restart <port>
+
+  sotun push add <spec> <user@host> <ssh-port> [name]   push a port to remote via ssh -R
+  sotun push del <name>                                    remove a push
+  sotun push list                                          list all pushes
+  sotun push start   <name>
+  sotun push stop    <name>
+  sotun push restart <name>
+
+  sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]  add L3 tunnel via ssh -w
+  sotun tunnel del <name>                                   remove a tunnel
+  sotun tunnel list                                         list all tunnels
+  sotun tunnel start   <name>
+  sotun tunnel stop    <name>
+  sotun tunnel restart <name>
+
+  sotun forward add <spec> <user@host> <ssh-port> [name]  pull a port from remote via ssh -L
+  sotun forward del <name>                                 remove a forward
+  sotun forward list                                       list all forwards
+  sotun forward start   <name>
+  sotun forward stop    <name>
+  sotun forward restart <name>
+
+  sotun update                                            pull and install latest version
+  sotun uninstall                                         remove everything sotun installed
+
+spec:
+  <port>                           short form — binds 127.0.0.1:<port> on both ends
+  <laddr>:<lport>:<raddr>:<rport>  full form — explicit bind and target addresses
+
+name:
+  optional for tunnel/forward add — auto-assigned (t0, t1 / f0, f1) if omitted
+  used for del/start/stop/restart instead of port numbers
+
+port restrictions:
+  <port> / <lport> / <rport>: must be 1024-65535
+  <ssh-port> (remote sshd):   must be 1-65535
+
+examples:
+  sotun proxy add 1080 root@127.0.0.1 22
+  sotun push add 10888 root@203.0.113.10 22
+  sotun tunnel add 0 0 10.0.0.1 10.0.0.2 root@203.0.113.10 22 sotun0
+  sotun tunnel del sotun0
+  sotun forward add 1080 root@203.0.113.10 22
+
+EOF
+}
+
+cmd="${1:-}"
+sub="${2:-}"
+
+case "$cmd" in
+  init)       cmd_init ;;
+  proxy)
+    case "$sub" in
+      add)     [ $# -lt 5 ] && { err "usage: sotun proxy add <port> <user@host> <ssh-port>"; exit 1; }
+               cmd_proxy_add "$3" "$4" "$5" ;;
+      del)     [ $# -lt 3 ] && { err "usage: sotun proxy del <port>"; exit 1; }
+               cmd_proxy_del "$3" ;;
+      list)    cmd_proxy_list ;;
+      start)   [ $# -lt 3 ] && { err "usage: sotun proxy start <port>"; exit 1; }
+               cmd_proxy_start "$3" ;;
+      stop)    [ $# -lt 3 ] && { err "usage: sotun proxy stop <port>"; exit 1; }
+               cmd_proxy_stop "$3" ;;
+      restart) [ $# -lt 3 ] && { err "usage: sotun proxy restart <port>"; exit 1; }
+               cmd_proxy_restart "$3" ;;
+      *) err "unknown proxy command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac ;;
+  push)
+    case "$sub" in
+      add)     [ $# -lt 5 ] && { err "usage: sotun push add <spec> <user@host> <ssh-port> [name]"; exit 1; }
+               cmd_push_add "$3" "$4" "$5" "${6:-}" ;;
+      del)     [ $# -lt 3 ] && { err "usage: sotun push del <name>"; exit 1; }
+               cmd_push_del "$3" ;;
+      list)    cmd_push_list ;;
+      start)   [ $# -lt 3 ] && { err "usage: sotun push start <name>"; exit 1; }
+               cmd_push_start "$3" ;;
+      stop)    [ $# -lt 3 ] && { err "usage: sotun push stop <name>"; exit 1; }
+               cmd_push_stop "$3" ;;
+      restart) [ $# -lt 3 ] && { err "usage: sotun push restart <name>"; exit 1; }
+               cmd_push_restart "$3" ;;
+      *) err "unknown push command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac ;;
+  tunnel)
+    case "$sub" in
+      add)     [ $# -lt 8 ] && { err "usage: sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]"; exit 1; }
+               cmd_tunnel_add "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}" ;;
+      del)     [ $# -lt 3 ] && { err "usage: sotun tunnel del <name>"; exit 1; }
+               cmd_tunnel_del "$3" ;;
+      list)    cmd_tunnel_list ;;
+      start)   [ $# -lt 3 ] && { err "usage: sotun tunnel start <name>"; exit 1; }
+               cmd_tunnel_start "$3" ;;
+      stop)    [ $# -lt 3 ] && { err "usage: sotun tunnel stop <name>"; exit 1; }
+               cmd_tunnel_stop "$3" ;;
+      restart) [ $# -lt 3 ] && { err "usage: sotun tunnel restart <name>"; exit 1; }
+               cmd_tunnel_restart "$3" ;;
+      *) err "unknown tunnel command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac ;;
+  forward)
+    case "$sub" in
+      add)     [ $# -lt 5 ] && { err "usage: sotun forward add <spec> <user@host> <ssh-port> [name]"; exit 1; }
+               cmd_forward_add "$3" "$4" "$5" "${6:-}" ;;
+      del)     [ $# -lt 3 ] && { err "usage: sotun forward del <name>"; exit 1; }
+               cmd_forward_del "$3" ;;
+      list)    cmd_forward_list ;;
+      start)   [ $# -lt 3 ] && { err "usage: sotun forward start <name>"; exit 1; }
+               cmd_forward_start "$3" ;;
+      stop)    [ $# -lt 3 ] && { err "usage: sotun forward stop <name>"; exit 1; }
+               cmd_forward_stop "$3" ;;
+      restart) [ $# -lt 3 ] && { err "usage: sotun forward restart <name>"; exit 1; }
+               cmd_forward_restart "$3" ;;
+      *) err "unknown forward command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac ;;
+  update)    cmd_update ;;
+  uninstall) cmd_uninstall ;;
+  help|"")   cmd_help ;;
+  *)         err "unknown command '$cmd'. run 'sotun help'."; exit 1 ;;
+esac

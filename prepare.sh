@@ -3,7 +3,7 @@
 # enables ssh tcp forwarding and gateway ports, then restarts sshd
 #
 # if this node has no internet access, run these two commands manually:
-#   sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config && sed -i 's/^#*GatewayPorts.*/GatewayPorts yes/' /etc/ssh/sshd_config && systemctl restart sshd
+#   sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config && sed -i 's/^#*GatewayPorts.*/GatewayPorts clientspecified/' /etc/ssh/sshd_config && systemctl restart sshd
 
 set -e
 
@@ -26,7 +26,7 @@ patch_option() {
 
 echo "patching sshd config..."
 patch_option AllowTcpForwarding yes
-patch_option GatewayPorts yes
+patch_option GatewayPorts clientspecified
 
 echo "restarting sshd..."
 if command -v systemctl >/dev/null 2>&1; then

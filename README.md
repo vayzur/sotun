@@ -50,7 +50,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/vayzur/sotun/main/prepare.sh
 > **no internet on the restricted node?** run these two commands manually:
 > ```bash
 > sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
-> sed -i 's/^#*GatewayPorts.*/GatewayPorts yes/' /etc/ssh/sshd_config
+> sed -i 's/^#*GatewayPorts.*/GatewayPorts clientspecified/' /etc/ssh/sshd_config
 > systemctl restart sshd
 > ```
 

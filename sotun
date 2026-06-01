@@ -93,9 +93,8 @@ reload_daemon() {
 }
 
 # install a systemd template unit if it does not already exist
-ensure_proxy_template() {
+write_proxy_template() {
   local unit="$SYSTEMD_DIR/proxy@.service"
-  [ -f "$unit" ] && return 0
   cat > "$unit" <<'EOF'
 [Unit]
 Description=sotun local socks5 proxy (port %i)
@@ -126,9 +125,13 @@ EOF
   reload_daemon
 }
 
-ensure_tunnel_template() {
+ensure_proxy_template() {
+  [ -f "$SYSTEMD_DIR/proxy@.service" ] && return 0
+  write_proxy_template
+}
+
+write_tunnel_template() {
   local unit="$SYSTEMD_DIR/tunnel@.service"
-  [ -f "$unit" ] && return 0
   cat > "$unit" <<'EOF'
 [Unit]
 Description=sotun reverse ssh tunnel (port %i)
@@ -158,9 +161,13 @@ EOF
   reload_daemon
 }
 
-ensure_forward_template() {
+ensure_tunnel_template() {
+  [ -f "$SYSTEMD_DIR/tunnel@.service" ] && return 0
+  write_tunnel_template
+}
+
+write_forward_template() {
   local unit="$SYSTEMD_DIR/forward@.service"
-  [ -f "$unit" ] && return 0
   cat > "$unit" <<'EOF'
 [Unit]
 Description=sotun local forward ssh tunnel (port %i)
@@ -188,6 +195,11 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
   reload_daemon
+}
+
+ensure_forward_template() {
+  [ -f "$SYSTEMD_DIR/forward@.service" ] && return 0
+  write_forward_template
 }
 
 cmd_init() {
@@ -489,6 +501,11 @@ cmd_update() {
   chmod +x "$tmp"
   install -m 0755 "$tmp" /usr/local/bin/sotun
   rm -f "$tmp"
+  info "sotun binary updated"
+  write_proxy_template
+  write_tunnel_template
+  write_forward_template
+  info "systemd templates updated"
   info "sotun updated to latest version"
 }
 

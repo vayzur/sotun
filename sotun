@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sotun — reverse ssh tunnel manager
+# sotun — ssh tunnel manager
 # https://github.com/vayzur/sotun
 
 set -euo pipefail
@@ -549,7 +549,7 @@ cmd_uninstall() {
 cmd_help() {
   cat <<EOF
 
-sotun v${VERSION} — reverse ssh tunnel manager
+sotun v${VERSION} — ssh tunnel manager
 https://github.com/vayzur/sotun
 
 usage:

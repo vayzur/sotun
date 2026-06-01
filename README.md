@@ -1,6 +1,6 @@
 # SOTUN
 
-minimal reverse ssh tunnel manager.
+minimal ssh tunnel manager.
 
 sotun manages ssh tunnels as systemd services with automatic restart.
 three tunnel types: socks5 proxy (`ssh -D`), reverse tunnel (`ssh -R`), local forward (`ssh -L`).

@@ -1,0 +1,476 @@
+#!/usr/bin/env bash
+# sotun — reverse ssh tunnel manager
+# https://github.com/vayzur/sotun
+
+set -euo pipefail
+
+VERSION="0.1.0"
+CONF_DIR=/etc/sotun
+SSH_KEY=~/.ssh/id_ed25519_sotun
+SYSTEMD_DIR=/etc/systemd/system
+PROXY_CONF_DIR="$CONF_DIR/proxy"
+TUNNEL_CONF_DIR="$CONF_DIR/tunnel"
+
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+RESET='\033[0m'
+
+info()  { printf "${GREEN}[info]${RESET} %s\n" "$*"; }
+err()   { printf "${RED}[err]${RESET} %s\n" "$*" >&2; }
+warn()  { printf "${YELLOW}[warn]${RESET} %s\n" "$*"; }
+
+need_root() {
+  if [ "$(id -u)" -ne 0 ]; then
+    err "this command requires root. run with sudo."
+    exit 1
+  fi
+}
+
+port_in_use() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltn "sport = :$1" 2>/dev/null | sed -n '2,$p' | grep -q .
+  elif command -v netstat >/dev/null 2>&1; then
+    netstat -ltn 2>/dev/null | grep -q ":$1 "
+  else
+    return 1
+  fi
+}
+
+valid_listen_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]
+}
+
+valid_ssh_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+require_listen_port() {
+  if ! valid_listen_port "$1"; then
+    err "invalid port '$1'. must be a number between 1024 and 65535."
+    exit 1
+  fi
+}
+
+require_ssh_port() {
+  if ! valid_ssh_port "$1"; then
+    err "invalid ssh port '$1'. must be a number between 1 and 65535."
+    exit 1
+  fi
+}
+
+service_exists() {
+  # $1 = full unit name e.g. proxy@1080.service
+  systemctl list-unit-files "$1" --no-legend 2>/dev/null | grep -q .
+}
+
+reload_daemon() {
+  systemctl daemon-reload
+}
+
+# install a systemd template unit if it does not already exist
+ensure_proxy_template() {
+  local unit="$SYSTEMD_DIR/proxy@.service"
+  [ -f "$unit" ] && return 0
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun local socks5 proxy (port %i)
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/proxy/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -D 127.0.0.1:${PROXY_PORT} \
+  ${PROXY_USER}@${PROXY_HOST} \
+  -p ${PROXY_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -o NoHostAuthenticationForLocalhost=yes \
+  -i /root/.ssh/id_ed25519_sotun
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+ensure_tunnel_template() {
+  local unit="$SYSTEMD_DIR/tunnel@.service"
+  [ -f "$unit" ] && return 0
+  cat > "$unit" <<'EOF'
+[Unit]
+Description=sotun reverse ssh tunnel (port %i)
+After=network.target proxy@%i.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/sotun/tunnel/%i
+ExecStart=/usr/bin/ssh -T -N \
+  -R 127.0.0.1:${TUNNEL_PORT}:127.0.0.1:${TUNNEL_PORT} \
+  ${TUNNEL_USER}@${TUNNEL_HOST} \
+  -p ${TUNNEL_SSH_PORT} \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=no \
+  -o ServerAliveInterval=3 \
+  -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes \
+  -o ConnectTimeout=10 \
+  -i /root/.ssh/id_ed25519_sotun
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  reload_daemon
+}
+
+cmd_init() {
+  need_root
+  local key="$SSH_KEY"
+  local pub="${key}.pub"
+
+  if [ -f "$key" ]; then
+    warn "key already exists at $key — skipping generation."
+  else
+    ssh-keygen -t ed25519 -f "$key" -N "" -q
+    info "ssh key created at $key"
+
+    # add to authorized_keys of current user (root when running with sudo)
+    local authkeys
+    authkeys="$(eval echo ~root)/.ssh/authorized_keys"
+    mkdir -p "$(dirname "$authkeys")"
+    chmod 700 "$(dirname "$authkeys")"
+    touch "$authkeys"
+    chmod 600 "$authkeys"
+
+    local pubkey
+    pubkey="$(cat "$pub")"
+    if ! grep -qF "$pubkey" "$authkeys" 2>/dev/null; then
+      echo "$pubkey" >> "$authkeys"
+      info "public key added to $authkeys"
+    fi
+  fi
+
+  echo ""
+  warn "important: add this public key to the authorized_keys on the remote node:"
+  echo ""
+  cat "${key}.pub"
+  echo ""
+}
+
+cmd_proxy_add() {
+  # sotun proxy add <port> <user@host> <ssh-port>
+  need_root
+  local port="$1"
+  local userhost="$2"
+  local ssh_port="$3"
+
+  require_listen_port "$port"
+  require_ssh_port "$ssh_port"
+
+  # parse user@host
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  if port_in_use "$port"; then
+    err "port $port is already in use. pick a different port."
+    exit 1
+  fi
+
+  if [ -f "$PROXY_CONF_DIR/$port" ]; then
+    err "proxy on port $port already exists. delete it first with: sotun proxy del $port"
+    exit 1
+  fi
+
+  ensure_proxy_template
+  mkdir -p "$PROXY_CONF_DIR"
+
+  cat > "$PROXY_CONF_DIR/$port" <<EOF
+PROXY_PORT=$port
+PROXY_USER=$user
+PROXY_HOST=$host
+PROXY_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "proxy@${port}.service"
+  info "proxy@${port} added and started (socks5 on 127.0.0.1:${port})"
+}
+
+cmd_proxy_del() {
+  need_root
+  local port="$1"
+  require_listen_port "$port"
+
+  if ! [ -f "$PROXY_CONF_DIR/$port" ]; then
+    err "no proxy found for port $port."
+    exit 1
+  fi
+
+  systemctl stop    "proxy@${port}.service" 2>/dev/null || true
+  systemctl disable "proxy@${port}.service" 2>/dev/null || true
+  rm -f "$PROXY_CONF_DIR/$port"
+  info "proxy@${port} stopped, disabled, and removed"
+}
+
+cmd_proxy_list() {
+  echo "proxies:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local port
+    port="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "proxy@${port}.service" 2>/dev/null || echo inactive)"
+    printf "  port %-6s  %s@%s:%s  [%s]\n" "$port" "$PROXY_USER" "$PROXY_HOST" "$PROXY_SSH_PORT" "$state"
+    found=1
+  done < <(find "$PROXY_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_proxy_start()   { need_root; require_listen_port "$1"; systemctl start   "proxy@${1}.service"; info "proxy@${1} started"; }
+cmd_proxy_stop()    { need_root; require_listen_port "$1"; systemctl stop    "proxy@${1}.service"; info "proxy@${1} stopped"; }
+cmd_proxy_restart() { need_root; require_listen_port "$1"; systemctl restart "proxy@${1}.service"; info "proxy@${1} restarted"; }
+
+cmd_tunnel_add() {
+  # sotun tunnel add <port> <user@host> <ssh-port>
+  need_root
+  local port="$1"
+  local userhost="$2"
+  local ssh_port="$3"
+
+  require_listen_port "$port"
+  require_ssh_port "$ssh_port"
+
+  local user host
+  if [[ "$userhost" == *@* ]]; then
+    user="${userhost%%@*}"
+    host="${userhost##*@}"
+  else
+    err "invalid format '$userhost'. expected user@host."
+    exit 1
+  fi
+
+  if [ -f "$TUNNEL_CONF_DIR/$port" ]; then
+    err "tunnel on port $port already exists. delete it first with: sotun tunnel del $port"
+    exit 1
+  fi
+
+  ensure_tunnel_template
+  mkdir -p "$TUNNEL_CONF_DIR"
+
+  cat > "$TUNNEL_CONF_DIR/$port" <<EOF
+TUNNEL_PORT=$port
+TUNNEL_USER=$user
+TUNNEL_HOST=$host
+TUNNEL_SSH_PORT=$ssh_port
+EOF
+
+  systemctl enable --now "tunnel@${port}.service"
+  info "tunnel@${port} added and started (forwarding 127.0.0.1:${port} → ${userhost})"
+}
+
+cmd_tunnel_del() {
+  need_root
+  local port="$1"
+  require_listen_port "$port"
+
+  if ! [ -f "$TUNNEL_CONF_DIR/$port" ]; then
+    err "no tunnel found for port $port."
+    exit 1
+  fi
+
+  systemctl stop    "tunnel@${port}.service" 2>/dev/null || true
+  systemctl disable "tunnel@${port}.service" 2>/dev/null || true
+  rm -f "$TUNNEL_CONF_DIR/$port"
+  info "tunnel@${port} stopped, disabled, and removed"
+}
+
+cmd_tunnel_list() {
+  echo "tunnels:"
+  local found=0
+  while IFS= read -r -d '' f; do
+    local port
+    port="$(basename "$f")"
+    # shellcheck source=/dev/null
+    . "$f"
+    local state
+    state="$(systemctl is-active "tunnel@${port}.service" 2>/dev/null || echo inactive)"
+    printf "  port %-6s  %s@%s:%s  [%s]\n" "$port" "$TUNNEL_USER" "$TUNNEL_HOST" "$TUNNEL_SSH_PORT" "$state"
+    found=1
+  done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  if [ "$found" -eq 0 ]; then
+    echo "  (none)"
+  fi
+}
+
+cmd_tunnel_start()   { need_root; require_listen_port "$1"; systemctl start   "tunnel@${1}.service"; info "tunnel@${1} started"; }
+cmd_tunnel_stop()    { need_root; require_listen_port "$1"; systemctl stop    "tunnel@${1}.service"; info "tunnel@${1} stopped"; }
+cmd_tunnel_restart() { need_root; require_listen_port "$1"; systemctl restart "tunnel@${1}.service"; info "tunnel@${1} restarted"; }
+
+cmd_update() {
+  need_root
+  local url="https://raw.githubusercontent.com/vayzur/sotun/main/sotun"
+  local tmp
+  tmp="$(mktemp)"
+  info "downloading latest sotun..."
+  if ! curl -fsSL "$url" -o "$tmp"; then
+    err "failed to download from $url"
+    rm -f "$tmp"
+    exit 1
+  fi
+  chmod +x "$tmp"
+  install -m 0755 "$tmp" /usr/local/bin/sotun
+  rm -f "$tmp"
+  info "sotun updated to latest version"
+}
+
+cmd_uninstall() {
+  need_root
+  warn "stopping and removing all proxy and tunnel services..."
+
+  # stop/disable/remove all proxy instances
+  while IFS= read -r -d '' f; do
+    local port
+    port="$(basename "$f")"
+    systemctl stop    "proxy@${port}.service" 2>/dev/null || true
+    systemctl disable "proxy@${port}.service" 2>/dev/null || true
+  done < <(find "$PROXY_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  # stop/disable/remove all tunnel instances
+  while IFS= read -r -d '' f; do
+    local port
+    port="$(basename "$f")"
+    systemctl stop    "tunnel@${port}.service" 2>/dev/null || true
+    systemctl disable "tunnel@${port}.service" 2>/dev/null || true
+  done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+
+  rm -f "$SYSTEMD_DIR/proxy@.service"
+  rm -f "$SYSTEMD_DIR/tunnel@.service"
+  reload_daemon
+  rm -rf "$CONF_DIR"
+  rm -f /usr/local/bin/sotun
+  info "sotun fully removed"
+}
+
+cmd_help() {
+  cat <<EOF
+
+sotun v${VERSION} — reverse ssh tunnel manager
+https://github.com/vayzur/sotun
+
+usage:
+  sotun init                                prepare this node (generate ssh key)
+
+  sotun proxy add <port> <user@host> <ssh-port>   add a local socks5 proxy via ssh -D
+  sotun proxy del <port>                           remove a proxy
+  sotun proxy list                                 list all proxies
+  sotun proxy start   <port>
+  sotun proxy stop    <port>
+  sotun proxy restart <port>
+
+  sotun tunnel add <port> <user@host> <ssh-port>  add a reverse tunnel via ssh -R
+  sotun tunnel del <port>                          remove a tunnel
+  sotun tunnel list                                list all tunnels
+  sotun tunnel start   <port>
+  sotun tunnel stop    <port>
+  sotun tunnel restart <port>
+
+  sotun update                              pull and install latest version
+  sotun uninstall                           remove everything sotun installed
+
+port restrictions:
+  <port> (listening): must be 1024-65535 (required for binding on this node)
+  <ssh-port> (remote): must be 1-65535 (any valid ssh port on remote host)
+
+examples:
+  sotun init
+  sotun proxy add 1080 root@127.0.0.1 22
+  sotun tunnel add 1080 root@203.0.113.10 22
+
+EOF
+}
+
+cmd="${1:-}"
+sub="${2:-}"
+
+case "$cmd" in
+  init)       cmd_init ;;
+
+  proxy)
+    case "$sub" in
+      add)
+        [ $# -lt 5 ] && { err "usage: sotun proxy add <port> <user@host> <ssh-port>"; exit 1; }
+        cmd_proxy_add "$3" "$4" "$5"
+        ;;
+      del)
+        [ $# -lt 3 ] && { err "usage: sotun proxy del <port>"; exit 1; }
+        cmd_proxy_del "$3"
+        ;;
+      list)     cmd_proxy_list ;;
+      start)
+        [ $# -lt 3 ] && { err "usage: sotun proxy start <port>"; exit 1; }
+        cmd_proxy_start "$3"
+        ;;
+      stop)
+        [ $# -lt 3 ] && { err "usage: sotun proxy stop <port>"; exit 1; }
+        cmd_proxy_stop "$3"
+        ;;
+      restart)
+        [ $# -lt 3 ] && { err "usage: sotun proxy restart <port>"; exit 1; }
+        cmd_proxy_restart "$3"
+        ;;
+      *) err "unknown proxy command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac
+    ;;
+
+  tunnel)
+    case "$sub" in
+      add)
+        [ $# -lt 5 ] && { err "usage: sotun tunnel add <port> <user@host> <ssh-port>"; exit 1; }
+        cmd_tunnel_add "$3" "$4" "$5"
+        ;;
+      del)
+        [ $# -lt 3 ] && { err "usage: sotun tunnel del <port>"; exit 1; }
+        cmd_tunnel_del "$3"
+        ;;
+      list)     cmd_tunnel_list ;;
+      start)
+        [ $# -lt 3 ] && { err "usage: sotun tunnel start <port>"; exit 1; }
+        cmd_tunnel_start "$3"
+        ;;
+      stop)
+        [ $# -lt 3 ] && { err "usage: sotun tunnel stop <port>"; exit 1; }
+        cmd_tunnel_stop "$3"
+        ;;
+      restart)
+        [ $# -lt 3 ] && { err "usage: sotun tunnel restart <port>"; exit 1; }
+        cmd_tunnel_restart "$3"
+        ;;
+      *) err "unknown tunnel command '$sub'. run 'sotun help'."; exit 1 ;;
+    esac
+    ;;
+
+  update)     cmd_update ;;
+  uninstall)  cmd_uninstall ;;
+  help|"")    cmd_help ;;
+  *)          err "unknown command '$cmd'. run 'sotun help'."; exit 1 ;;
+esac

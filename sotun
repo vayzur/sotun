@@ -142,7 +142,7 @@ StartLimitIntervalSec=0
 Type=simple
 EnvironmentFile=/etc/sotun/tunnel/%i
 ExecStart=/usr/bin/ssh -T -N \
-  -R ${TUNNEL_LADDR}:${TUNNEL_LPORT}:${TUNNEL_RADDR}:${TUNNEL_RPORT} \
+  -R ${TUNNEL_RADDR}:${TUNNEL_RPORT}:${TUNNEL_LADDR}:${TUNNEL_LPORT} \
   ${TUNNEL_USER}@${TUNNEL_HOST} \
   -p ${TUNNEL_SSH_PORT} \
   -o BatchMode=yes \
@@ -357,7 +357,7 @@ TUNNEL_SSH_PORT=$ssh_port
 EOF
 
   systemctl enable --now "tunnel@${SPEC_LPORT}.service"
-  info "tunnel@${SPEC_LPORT} added and started (-R ${SPEC_LADDR}:${SPEC_LPORT}:${SPEC_RADDR}:${SPEC_RPORT} → ${userhost})"
+  info "tunnel@${SPEC_LPORT} added and started (-R ${SPEC_RADDR}:${SPEC_RPORT}:${SPEC_LADDR}:${SPEC_LPORT} → ${userhost})"
 }
 
 cmd_tunnel_del() {
@@ -387,7 +387,7 @@ cmd_tunnel_list() {
     local state
     state="$(systemctl is-active "tunnel@${port}.service" 2>/dev/null || echo inactive)"
     printf "  -R %-35s  %s@%s:%s  [%s]\n" \
-      "${TUNNEL_LADDR}:${TUNNEL_LPORT}:${TUNNEL_RADDR}:${TUNNEL_RPORT}" \
+      "${TUNNEL_RADDR}:${TUNNEL_RPORT}:${TUNNEL_LADDR}:${TUNNEL_LPORT}" \
       "$TUNNEL_USER" "$TUNNEL_HOST" "$TUNNEL_SSH_PORT" "$state"
     found=1
   done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)

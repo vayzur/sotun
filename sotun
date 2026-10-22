@@ -124,7 +124,7 @@ next_tun_id() {
 # asks the remote node which tun ids are taken and skips ids claimed here
 next_remote_tun_id() {
   local used id=0
-  used="$(ssh -T -i /root/.ssh/id_ed25519_sotun -p "$3" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$1@$2" \
+  used="$(ssh -T -i /root/.ssh/id_ed25519_sotun -p "$3" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 "$1@$2" \
     'ls /sys/class/net | sed -n "s/^tun\([0-9]*\)$/\1/p"' | tr '\n' ' ')" || return 1
   used="$used $(grep -h '^TUNNEL_REMOTE_ID=' "$TUNNEL_CONF_DIR"/* 2>/dev/null | cut -d= -f2 | tr '\n' ' ' || true)"
   while [[ " $used " == *" $id "* ]]; do
@@ -357,7 +357,7 @@ PROXY_HOST=$host
 PROXY_SSH_PORT=$ssh_port
 EOF
 
-  systemctl enable --now "proxy@${port}.service"
+  systemctl enable --now --quiet "proxy@${port}.service"
   info "proxy@${port} added and started (socks5 on 127.0.0.1:${port})"
 }
 
@@ -438,7 +438,7 @@ PUSH_HOST=$host
 PUSH_SSH_PORT=$ssh_port
 EOF
 
-  systemctl enable --now "push@${name}.service"
+  systemctl enable --now --quiet "push@${name}.service"
   info "push '$name' added and started (-R ${SPEC_RADDR}:${SPEC_RPORT}:${SPEC_LADDR}:${SPEC_LPORT} → ${userhost})"
 }
 
@@ -528,7 +528,7 @@ TUNNEL_HOST=$host
 TUNNEL_SSH_PORT=$ssh_port
 EOF
 
-  systemctl enable --now "tunnel@${name}.service"
+  systemctl enable --now --quiet "tunnel@${name}.service"
   info "tunnel '$name' added and started (-w ${local_id}:${remote_id} → ${userhost})"
 }
 
@@ -617,7 +617,7 @@ PULL_HOST=$host
 PULL_SSH_PORT=$ssh_port
 EOF
 
-  systemctl enable --now "pull@${name}.service"
+  systemctl enable --now --quiet "pull@${name}.service"
   info "pull '$name' added and started (-L ${SPEC_LADDR}:${SPEC_LPORT}:${SPEC_RADDR}:${SPEC_RPORT} → ${userhost})"
 }
 

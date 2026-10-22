@@ -103,18 +103,16 @@ subsequent operations on that push.
 the tunnel runs `ssh -w` to create a virtual network interface between nodes.
 
 ```bash
-sudo sotun tunnel add 0 0 10.0.0.1 10.0.0.2 root@203.0.113.10 22
+sudo sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10 22
 ```
 
 arguments:
-- `0` — local tunnel id (tun0)
-- `0` — remote tunnel id (tun0)
 - `10.0.0.1` — local tunnel ip
 - `10.0.0.2` — remote tunnel ip
 - `root@203.0.113.10` — restricted node ssh user/ip
 - `22` — sshd port on restricted node
 
-sotun assigns a name automatically (`t0`, `t1`, ...).
+sotun picks a free `tun` id on both ends, stores them in the tunnel config, and assigns a name automatically (`t0`, `t1`, ...). if the restricted node is unreachable, the tunnel is not created.
 
 ---
 
@@ -170,7 +168,7 @@ sotun push add <spec> <user@host> <ssh-port> [name]
 sotun push del <name>
 sotun push list
 
-sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]
+sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]
 sotun tunnel del <name>
 sotun tunnel list
 

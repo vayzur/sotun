@@ -110,6 +110,29 @@ svc() {
   info "$1@$3 $verb"
 }
 
+# next_tun_id
+# finds the lowest tun id unused by a live device or another tunnel
+next_tun_id() {
+  local id=0
+  while [ -e "/sys/class/net/tun$id" ] || grep -qs "^TUNNEL_LOCAL_ID=$id$" "$TUNNEL_CONF_DIR"/*; do
+    id=$(( id + 1 ))
+  done
+  echo "$id"
+}
+
+# next_remote_tun_id <user> <host> <ssh_port>
+# asks the remote node which tun ids are taken and skips ids claimed here
+next_remote_tun_id() {
+  local used id=0
+  used="$(ssh -T -i /root/.ssh/id_ed25519_sotun -p "$3" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$1@$2" \
+    'ls /sys/class/net | sed -n "s/^tun\([0-9]*\)$/\1/p"' | tr '\n' ' ')" || return 1
+  used="$used $(grep -h '^TUNNEL_REMOTE_ID=' "$TUNNEL_CONF_DIR"/* 2>/dev/null | cut -d= -f2 | tr '\n' ' ' || true)"
+  while [[ " $used " == *" $id "* ]]; do
+    id=$(( id + 1 ))
+  done
+  echo "$id"
+}
+
 # install a systemd template unit if it does not already exist
 write_proxy_template() {
   local unit="$SYSTEMD_DIR/proxy@.service"
@@ -456,15 +479,13 @@ cmd_push_list() {
 }
 
 cmd_tunnel_add() {
-  # sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]
+  # sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]
   need_root
-  local local_id="$1"
-  local remote_id="$2"
-  local local_ip="$3"
-  local remote_ip="$4"
-  local userhost="$5"
-  local ssh_port="$6"
-  local name="${7:-}"
+  local local_ip="$1"
+  local remote_ip="$2"
+  local userhost="$3"
+  local ssh_port="$4"
+  local name="${5:-}"
 
   require_ssh_port "$ssh_port"
 
@@ -488,6 +509,13 @@ cmd_tunnel_add() {
       err "tunnel '$name' already exists. delete it first with: sotun tunnel del $name"
       exit 1
     fi
+  fi
+
+  local local_id remote_id
+  local_id="$(next_tun_id)"
+  if ! remote_id="$(next_remote_tun_id "$user" "$host" "$ssh_port")"; then
+    err "cannot ssh to $userhost to find a free tun id. tunnel not created."
+    exit 1
   fi
 
   cat > "$TUNNEL_CONF_DIR/$name" <<EOF
@@ -694,7 +722,7 @@ usage:
   sotun push stop    <name>
   sotun push restart <name>
 
-  sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]  add L3 tunnel via ssh -w
+  sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]  add L3 tunnel via ssh -w
   sotun tunnel del <name>                                   remove a tunnel
   sotun tunnel list                                         list all tunnels
   sotun tunnel start   <name>
@@ -726,7 +754,7 @@ port restrictions:
 examples:
   sotun proxy add 1080 root@127.0.0.1 22
   sotun push add 10888 root@203.0.113.10 22
-  sotun tunnel add 0 0 10.0.0.1 10.0.0.2 root@203.0.113.10 22 sotun0
+  sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10 22 sotun0
   sotun tunnel del sotun0
   sotun pull add 1080 root@203.0.113.10 22
 
@@ -770,8 +798,8 @@ case "$cmd" in
     esac ;;
   tunnel)
     case "$sub" in
-      add)     [ $# -lt 8 ] && { err "usage: sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]"; exit 1; }
-               cmd_tunnel_add "$3" "$4" "$5" "$6" "$7" "$8" "${9:-}" ;;
+      add)     [ $# -lt 6 ] && { err "usage: sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]"; exit 1; }
+               cmd_tunnel_add "$3" "$4" "$5" "$6" "${7:-}" ;;
       del)     [ $# -lt 3 ] && { err "usage: sotun tunnel del <name>"; exit 1; }
                cmd_tunnel_del "$3" ;;
       list)    cmd_tunnel_list ;;

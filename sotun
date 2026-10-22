@@ -10,7 +10,7 @@ SYSTEMD_DIR=/etc/systemd/system
 PROXY_CONF_DIR="$CONF_DIR/proxy"
 PUSH_CONF_DIR="$CONF_DIR/push"
 TUNNEL_CONF_DIR="$CONF_DIR/tunnel"
-FORWARD_CONF_DIR="$CONF_DIR/forward"
+PULL_CONF_DIR="$CONF_DIR/pull"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -225,21 +225,21 @@ ensure_tunnel_template() {
   write_tunnel_template
 }
 
-write_forward_template() {
-  local unit="$SYSTEMD_DIR/forward@.service"
+write_pull_template() {
+  local unit="$SYSTEMD_DIR/pull@.service"
   cat > "$unit" <<'EOF'
 [Unit]
-Description=sotun local forward ssh tunnel (%i)
+Description=sotun local pull ssh tunnel (%i)
 After=network.target
 StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/sotun/forward/%i
+EnvironmentFile=/etc/sotun/pull/%i
 ExecStart=/usr/bin/ssh -T -N \
-  -L ${FORWARD_LADDR}:${FORWARD_LPORT}:${FORWARD_RADDR}:${FORWARD_RPORT} \
-  ${FORWARD_USER}@${FORWARD_HOST} \
-  -p ${FORWARD_SSH_PORT} \
+  -L ${PULL_LADDR}:${PULL_LPORT}:${PULL_RADDR}:${PULL_RPORT} \
+  ${PULL_USER}@${PULL_HOST} \
+  -p ${PULL_SSH_PORT} \
   -o BatchMode=yes \
   -o StrictHostKeyChecking=no \
   -o ServerAliveInterval=3 \
@@ -256,9 +256,9 @@ EOF
   systemctl daemon-reload
 }
 
-ensure_forward_template() {
-  [ -f "$SYSTEMD_DIR/forward@.service" ] && return 0
-  write_forward_template
+ensure_pull_template() {
+  [ -f "$SYSTEMD_DIR/pull@.service" ] && return 0
+  write_pull_template
 }
 
 cmd_init() {
@@ -540,8 +540,8 @@ cmd_tunnel_list() {
   fi
 }
 
-cmd_forward_add() {
-  # sotun forward add <spec> <user@host> <ssh-port> [name]
+cmd_pull_add() {
+  # sotun pull add <spec> <user@host> <ssh-port> [name]
   # spec: <port> or <laddr>:<lport>:<raddr>:<rport>
   need_root
   local spec="$1"
@@ -566,50 +566,50 @@ cmd_forward_add() {
     exit 1
   fi
 
-  ensure_forward_template
-  mkdir -p "$FORWARD_CONF_DIR"
+  ensure_pull_template
+  mkdir -p "$PULL_CONF_DIR"
 
   if [ -z "$name" ]; then
-    name="$(next_name f "$FORWARD_CONF_DIR")"
+    name="$(next_name f "$PULL_CONF_DIR")"
   else
     require_name "$name"
-    if [ -f "$FORWARD_CONF_DIR/$name" ]; then
-      err "forward '$name' already exists. delete it first with: sotun forward del $name"
+    if [ -f "$PULL_CONF_DIR/$name" ]; then
+      err "pull '$name' already exists. delete it first with: sotun pull del $name"
       exit 1
     fi
   fi
 
-  cat > "$FORWARD_CONF_DIR/$name" <<EOF
-FORWARD_LADDR=$SPEC_LADDR
-FORWARD_LPORT=$SPEC_LPORT
-FORWARD_RADDR=$SPEC_RADDR
-FORWARD_RPORT=$SPEC_RPORT
-FORWARD_USER=$user
-FORWARD_HOST=$host
-FORWARD_SSH_PORT=$ssh_port
+  cat > "$PULL_CONF_DIR/$name" <<EOF
+PULL_LADDR=$SPEC_LADDR
+PULL_LPORT=$SPEC_LPORT
+PULL_RADDR=$SPEC_RADDR
+PULL_RPORT=$SPEC_RPORT
+PULL_USER=$user
+PULL_HOST=$host
+PULL_SSH_PORT=$ssh_port
 EOF
 
-  systemctl enable --now "forward@${name}.service"
-  info "forward '$name' added and started (-L ${SPEC_LADDR}:${SPEC_LPORT}:${SPEC_RADDR}:${SPEC_RPORT} → ${userhost})"
+  systemctl enable --now "pull@${name}.service"
+  info "pull '$name' added and started (-L ${SPEC_LADDR}:${SPEC_LPORT}:${SPEC_RADDR}:${SPEC_RPORT} → ${userhost})"
 }
 
-cmd_forward_del() {
+cmd_pull_del() {
   need_root
   local name="$1"
   require_name "$name"
 
-  if ! [ -f "$FORWARD_CONF_DIR/$name" ]; then
-    err "no forward found with name '$name'."
+  if ! [ -f "$PULL_CONF_DIR/$name" ]; then
+    err "no pull found with name '$name'."
     exit 1
   fi
 
-  systemctl disable --now --quiet "forward@${name}.service" 2>/dev/null || true
-  rm -f "$FORWARD_CONF_DIR/$name"
-  info "forward '$name' stopped, disabled, and removed"
+  systemctl disable --now --quiet "pull@${name}.service" 2>/dev/null || true
+  rm -f "$PULL_CONF_DIR/$name"
+  info "pull '$name' stopped, disabled, and removed"
 }
 
-cmd_forward_list() {
-  echo "forwards:"
+cmd_pull_list() {
+  echo "pulls:"
   local found=0
   while IFS= read -r -d '' f; do
     local name
@@ -617,13 +617,13 @@ cmd_forward_list() {
     # shellcheck source=/dev/null
     . "$f"
     local state
-    state="$(systemctl is-active "forward@${name}.service" 2>/dev/null || echo inactive)"
+    state="$(systemctl is-active "pull@${name}.service" 2>/dev/null || echo inactive)"
     printf "  %-6s  -L %-35s  %s@%s:%s  [%s]\n" \
       "$name" \
-      "${FORWARD_LADDR}:${FORWARD_LPORT}:${FORWARD_RADDR}:${FORWARD_RPORT}" \
-      "$FORWARD_USER" "$FORWARD_HOST" "$FORWARD_SSH_PORT" "$state"
+      "${PULL_LADDR}:${PULL_LPORT}:${PULL_RADDR}:${PULL_RPORT}" \
+      "$PULL_USER" "$PULL_HOST" "$PULL_SSH_PORT" "$state"
     found=1
-  done < <(find "$FORWARD_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
+  done < <(find "$PULL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null | sort -z)
   if [ "$found" -eq 0 ]; then
     echo "  (none)"
   fi
@@ -647,24 +647,24 @@ cmd_update() {
   write_proxy_template
   write_push_template
   write_tunnel_template
-  write_forward_template
+  write_pull_template
   info "systemd templates updated"
   info "sotun updated to latest version"
 }
 
 cmd_uninstall() {
   need_root
-  warn "stopping and removing all proxy, push, tunnel, and forward services..."
+  warn "stopping and removing all proxy, push, tunnel, and pull services..."
 
   # stop/disable/remove all instances
-  for kind in proxy push tunnel forward; do
+  for kind in proxy push tunnel pull; do
     while IFS= read -r -d '' f; do
       local name; name="$(basename "$f")"
       systemctl disable --now --quiet "$kind@${name}.service" 2>/dev/null || true
     done < <(find "$CONF_DIR/$kind" -maxdepth 1 -type f -print0 2>/dev/null)
   done
 
-  rm -f "$SYSTEMD_DIR"/{proxy,push,tunnel,forward}@.service
+  rm -f "$SYSTEMD_DIR"/{proxy,push,tunnel,pull}@.service
   systemctl daemon-reload
   rm -rf "$CONF_DIR"
   rm -f /usr/local/bin/sotun
@@ -701,12 +701,12 @@ usage:
   sotun tunnel stop    <name>
   sotun tunnel restart <name>
 
-  sotun forward add <spec> <user@host> <ssh-port> [name]  pull a port from remote via ssh -L
-  sotun forward del <name>                                 remove a forward
-  sotun forward list                                       list all forwards
-  sotun forward start   <name>
-  sotun forward stop    <name>
-  sotun forward restart <name>
+  sotun pull add <spec> <user@host> <ssh-port> [name]   pull a port from remote via ssh -L
+  sotun pull del <name>                                    remove a pull
+  sotun pull list                                          list all pulls
+  sotun pull start   <name>
+  sotun pull stop    <name>
+  sotun pull restart <name>
 
   sotun update                                            pull and install latest version
   sotun uninstall                                         remove everything sotun installed
@@ -716,7 +716,7 @@ spec:
   <laddr>:<lport>:<raddr>:<rport>  full form — explicit bind and target addresses
 
 name:
-  optional for tunnel/forward add — auto-assigned (t0, t1 / f0, f1) if omitted
+  optional for tunnel/pull add — auto-assigned (t0, t1 / f0, f1) if omitted
   used for del/start/stop/restart instead of port numbers
 
 port restrictions:
@@ -728,7 +728,7 @@ examples:
   sotun push add 10888 root@203.0.113.10 22
   sotun tunnel add 0 0 10.0.0.1 10.0.0.2 root@203.0.113.10 22 sotun0
   sotun tunnel del sotun0
-  sotun forward add 1080 root@203.0.113.10 22
+  sotun pull add 1080 root@203.0.113.10 22
 
 EOF
 }
@@ -783,20 +783,20 @@ case "$cmd" in
                svc tunnel restart "$3" require_name ;;
       *) err "unknown tunnel command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
-  forward)
+  pull)
     case "$sub" in
-      add)     [ $# -lt 5 ] && { err "usage: sotun forward add <spec> <user@host> <ssh-port> [name]"; exit 1; }
-               cmd_forward_add "$3" "$4" "$5" "${6:-}" ;;
-      del)     [ $# -lt 3 ] && { err "usage: sotun forward del <name>"; exit 1; }
-               cmd_forward_del "$3" ;;
-      list)    cmd_forward_list ;;
-      start)   [ $# -lt 3 ] && { err "usage: sotun forward start <name>"; exit 1; }
-               svc forward start "$3" require_name ;;
-      stop)    [ $# -lt 3 ] && { err "usage: sotun forward stop <name>"; exit 1; }
-               svc forward stop "$3" require_name ;;
-      restart) [ $# -lt 3 ] && { err "usage: sotun forward restart <name>"; exit 1; }
-               svc forward restart "$3" require_name ;;
-      *) err "unknown forward command '$sub'. run 'sotun help'."; exit 1 ;;
+      add)     [ $# -lt 5 ] && { err "usage: sotun pull add <spec> <user@host> <ssh-port> [name]"; exit 1; }
+               cmd_pull_add "$3" "$4" "$5" "${6:-}" ;;
+      del)     [ $# -lt 3 ] && { err "usage: sotun pull del <name>"; exit 1; }
+               cmd_pull_del "$3" ;;
+      list)    cmd_pull_list ;;
+      start)   [ $# -lt 3 ] && { err "usage: sotun pull start <name>"; exit 1; }
+               svc pull start "$3" require_name ;;
+      stop)    [ $# -lt 3 ] && { err "usage: sotun pull stop <name>"; exit 1; }
+               svc pull stop "$3" require_name ;;
+      restart) [ $# -lt 3 ] && { err "usage: sotun pull restart <name>"; exit 1; }
+               svc pull restart "$3" require_name ;;
+      *) err "unknown pull command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
   update)    cmd_update ;;
   uninstall) cmd_uninstall ;;

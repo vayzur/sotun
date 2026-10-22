@@ -3,7 +3,7 @@
 minimal ssh tunnel manager.
 
 sotun manages ssh tunnels as systemd services with automatic restart.
-four tunnel types: socks5 proxy (`ssh -D`), reverse tunnel (`ssh -R` / push), local forward (`ssh -L`), and L3 tunnel (`ssh -w`).
+four tunnel types: socks5 proxy (`ssh -D`), reverse tunnel (`ssh -R` / push), pull (`ssh -L`), and L3 tunnel (`ssh -w`).
 
 ---
 
@@ -118,12 +118,12 @@ sotun assigns a name automatically (`t0`, `t1`, ...).
 
 ---
 
-## forward tunnels (ssh -L)
+## pull tunnels (ssh -L)
 
-`sotun forward` pulls a port *from* the remote node to this node via `ssh -L`.
+`sotun pull` pulls a port *from* the remote node to this node via `ssh -L`.
 
 ```bash
-sudo sotun forward add 1080 root@203.0.113.10 22
+sudo sotun pull add 1080 root@203.0.113.10 22
 ```
 
 ---
@@ -134,7 +134,7 @@ sudo sotun forward add 1080 root@203.0.113.10 22
 sudo sotun proxy list
 sudo sotun push list
 sudo sotun tunnel list
-sudo sotun forward list
+sudo sotun pull list
 ```
 
 ---
@@ -174,9 +174,9 @@ sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-
 sotun tunnel del <name>
 sotun tunnel list
 
-sotun forward add <spec> <user@host> <ssh-port> [name]
-sotun forward del <name>
-sotun forward list
+sotun pull add <spec> <user@host> <ssh-port> [name]
+sotun pull del <name>
+sotun pull list
 
 sotun update
 sotun uninstall

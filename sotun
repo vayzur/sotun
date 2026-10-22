@@ -29,13 +29,8 @@ need_root() {
 }
 
 port_in_use() {
-  if command -v ss >/dev/null 2>&1; then
-    ss -ltn "sport = :$1" 2>/dev/null | sed -n '2,$p' | grep -q .
-  elif command -v netstat >/dev/null 2>&1; then
-    netstat -ltn 2>/dev/null | grep -q ":$1 "
-  else
-    return 1
-  fi
+  command -v ss >/dev/null 2>&1 || return 1
+  ss -ltn "sport = :$1" 2>/dev/null | sed -n '2,$p' | grep -q .
 }
 
 valid_listen_port() {
@@ -106,8 +101,13 @@ next_name() {
   echo "${prefix}${i}"
 }
 
-reload_daemon() {
-  systemctl daemon-reload
+# svc <kind> <action> <id> <validator>
+svc() {
+  need_root
+  "$4" "$3"
+  systemctl "$2" "$1@$3.service"
+  local verb; case "$2" in start) verb=started ;; stop) verb=stopped ;; restart) verb=restarted ;; esac
+  info "$1@$3 $verb"
 }
 
 # install a systemd template unit if it does not already exist
@@ -140,7 +140,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-  reload_daemon
+  systemctl daemon-reload
 }
 
 ensure_proxy_template() {
@@ -176,7 +176,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-  reload_daemon
+  systemctl daemon-reload
 }
 
 ensure_push_template() {
@@ -217,7 +217,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-  reload_daemon
+  systemctl daemon-reload
 }
 
 ensure_tunnel_template() {
@@ -253,7 +253,7 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-  reload_daemon
+  systemctl daemon-reload
 }
 
 ensure_forward_template() {
@@ -273,8 +273,7 @@ cmd_init() {
     info "ssh key created at $key"
 
     # add to authorized_keys of current user (root when running with sudo)
-    local authkeys
-    authkeys="$(eval echo ~root)/.ssh/authorized_keys"
+    local authkeys="/root/.ssh/authorized_keys"
     mkdir -p "$(dirname "$authkeys")"
     chmod 700 "$(dirname "$authkeys")"
     touch "$authkeys"
@@ -349,8 +348,7 @@ cmd_proxy_del() {
     exit 1
   fi
 
-  systemctl stop    "proxy@${port}.service" 2>/dev/null || true
-  systemctl disable "proxy@${port}.service" 2>/dev/null || true
+  systemctl disable --now --quiet "proxy@${port}.service" 2>/dev/null || true
   rm -f "$PROXY_CONF_DIR/$port"
   info "proxy@${port} stopped, disabled, and removed"
 }
@@ -372,10 +370,6 @@ cmd_proxy_list() {
     echo "  (none)"
   fi
 }
-
-cmd_proxy_start()   { need_root; require_listen_port "$1"; systemctl start   "proxy@${1}.service"; info "proxy@${1} started"; }
-cmd_proxy_stop()    { need_root; require_listen_port "$1"; systemctl stop    "proxy@${1}.service"; info "proxy@${1} stopped"; }
-cmd_proxy_restart() { need_root; require_listen_port "$1"; systemctl restart "proxy@${1}.service"; info "proxy@${1} restarted"; }
 
 cmd_push_add() {
   # sotun push add <spec> <user@host> <ssh-port> [name]
@@ -435,8 +429,7 @@ cmd_push_del() {
     exit 1
   fi
 
-  systemctl stop    "push@${name}.service" 2>/dev/null || true
-  systemctl disable "push@${name}.service" 2>/dev/null || true
+  systemctl disable --now --quiet "push@${name}.service" 2>/dev/null || true
   rm -f "$PUSH_CONF_DIR/$name"
   info "push '$name' stopped, disabled, and removed"
 }
@@ -461,10 +454,6 @@ cmd_push_list() {
     echo "  (none)"
   fi
 }
-
-cmd_push_start()   { need_root; require_name "$1"; systemctl start   "push@${1}.service"; info "push '$1' started"; }
-cmd_push_stop()    { need_root; require_name "$1"; systemctl stop    "push@${1}.service"; info "push '$1' stopped"; }
-cmd_push_restart() { need_root; require_name "$1"; systemctl restart "push@${1}.service"; info "push '$1' restarted"; }
 
 cmd_tunnel_add() {
   # sotun tunnel add <local_id> <remote_id> <local_ip> <remote_ip> <user@host> <ssh-port> [name]
@@ -525,8 +514,7 @@ cmd_tunnel_del() {
     exit 1
   fi
 
-  systemctl stop    "tunnel@${name}.service" 2>/dev/null || true
-  systemctl disable "tunnel@${name}.service" 2>/dev/null || true
+  systemctl disable --now --quiet "tunnel@${name}.service" 2>/dev/null || true
   rm -f "$TUNNEL_CONF_DIR/$name"
   info "tunnel '$name' stopped, disabled, and removed"
 }
@@ -551,10 +539,6 @@ cmd_tunnel_list() {
     echo "  (none)"
   fi
 }
-
-cmd_tunnel_start()   { need_root; require_name "$1"; systemctl start   "tunnel@${1}.service"; info "tunnel '$1' started"; }
-cmd_tunnel_stop()    { need_root; require_name "$1"; systemctl stop    "tunnel@${1}.service"; info "tunnel '$1' stopped"; }
-cmd_tunnel_restart() { need_root; require_name "$1"; systemctl restart "tunnel@${1}.service"; info "tunnel '$1' restarted"; }
 
 cmd_forward_add() {
   # sotun forward add <spec> <user@host> <ssh-port> [name]
@@ -619,8 +603,7 @@ cmd_forward_del() {
     exit 1
   fi
 
-  systemctl stop    "forward@${name}.service" 2>/dev/null || true
-  systemctl disable "forward@${name}.service" 2>/dev/null || true
+  systemctl disable --now --quiet "forward@${name}.service" 2>/dev/null || true
   rm -f "$FORWARD_CONF_DIR/$name"
   info "forward '$name' stopped, disabled, and removed"
 }
@@ -645,10 +628,6 @@ cmd_forward_list() {
     echo "  (none)"
   fi
 }
-
-cmd_forward_start()   { need_root; require_name "$1"; systemctl start   "forward@${1}.service"; info "forward '$1' started"; }
-cmd_forward_stop()    { need_root; require_name "$1"; systemctl stop    "forward@${1}.service"; info "forward '$1' stopped"; }
-cmd_forward_restart() { need_root; require_name "$1"; systemctl restart "forward@${1}.service"; info "forward '$1' restarted"; }
 
 cmd_update() {
   need_root
@@ -677,36 +656,16 @@ cmd_uninstall() {
   need_root
   warn "stopping and removing all proxy, push, tunnel, and forward services..."
 
-  # stop/disable/remove all proxy instances
-  while IFS= read -r -d '' f; do
-    local port; port="$(basename "$f")"
-    systemctl stop    "proxy@${port}.service" 2>/dev/null || true
-    systemctl disable "proxy@${port}.service" 2>/dev/null || true
-  done < <(find "$PROXY_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
+  # stop/disable/remove all instances
+  for kind in proxy push tunnel forward; do
+    while IFS= read -r -d '' f; do
+      local name; name="$(basename "$f")"
+      systemctl disable --now --quiet "$kind@${name}.service" 2>/dev/null || true
+    done < <(find "$CONF_DIR/$kind" -maxdepth 1 -type f -print0 2>/dev/null)
+  done
 
-  # stop/disable/remove all push instances
-  while IFS= read -r -d '' f; do
-    local name; name="$(basename "$f")"
-    systemctl stop    "push@${name}.service" 2>/dev/null || true
-    systemctl disable "push@${name}.service" 2>/dev/null || true
-  done < <(find "$PUSH_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
-
-  # stop/disable/remove all tunnel instances
-  while IFS= read -r -d '' f; do
-    local name; name="$(basename "$f")"
-    systemctl stop    "tunnel@${name}.service" 2>/dev/null || true
-    systemctl disable "tunnel@${name}.service" 2>/dev/null || true
-  done < <(find "$TUNNEL_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
-
-  # stop/disable/remove all forward instances
-  while IFS= read -r -d '' f; do
-    local name; name="$(basename "$f")"
-    systemctl stop    "forward@${name}.service" 2>/dev/null || true
-    systemctl disable "forward@${name}.service" 2>/dev/null || true
-  done < <(find "$FORWARD_CONF_DIR" -maxdepth 1 -type f -print0 2>/dev/null)
-
-  rm -f "$SYSTEMD_DIR/proxy@.service" "$SYSTEMD_DIR/push@.service" "$SYSTEMD_DIR/tunnel@.service" "$SYSTEMD_DIR/forward@.service"
-  reload_daemon
+  rm -f "$SYSTEMD_DIR"/{proxy,push,tunnel,forward}@.service
+  systemctl daemon-reload
   rm -rf "$CONF_DIR"
   rm -f /usr/local/bin/sotun
   info "sotun fully removed"
@@ -787,11 +746,11 @@ case "$cmd" in
                cmd_proxy_del "$3" ;;
       list)    cmd_proxy_list ;;
       start)   [ $# -lt 3 ] && { err "usage: sotun proxy start <port>"; exit 1; }
-               cmd_proxy_start "$3" ;;
+               svc proxy start "$3" require_listen_port ;;
       stop)    [ $# -lt 3 ] && { err "usage: sotun proxy stop <port>"; exit 1; }
-               cmd_proxy_stop "$3" ;;
+               svc proxy stop "$3" require_listen_port ;;
       restart) [ $# -lt 3 ] && { err "usage: sotun proxy restart <port>"; exit 1; }
-               cmd_proxy_restart "$3" ;;
+               svc proxy restart "$3" require_listen_port ;;
       *) err "unknown proxy command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
   push)
@@ -802,11 +761,11 @@ case "$cmd" in
                cmd_push_del "$3" ;;
       list)    cmd_push_list ;;
       start)   [ $# -lt 3 ] && { err "usage: sotun push start <name>"; exit 1; }
-               cmd_push_start "$3" ;;
+               svc push start "$3" require_name ;;
       stop)    [ $# -lt 3 ] && { err "usage: sotun push stop <name>"; exit 1; }
-               cmd_push_stop "$3" ;;
+               svc push stop "$3" require_name ;;
       restart) [ $# -lt 3 ] && { err "usage: sotun push restart <name>"; exit 1; }
-               cmd_push_restart "$3" ;;
+               svc push restart "$3" require_name ;;
       *) err "unknown push command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
   tunnel)
@@ -817,11 +776,11 @@ case "$cmd" in
                cmd_tunnel_del "$3" ;;
       list)    cmd_tunnel_list ;;
       start)   [ $# -lt 3 ] && { err "usage: sotun tunnel start <name>"; exit 1; }
-               cmd_tunnel_start "$3" ;;
+               svc tunnel start "$3" require_name ;;
       stop)    [ $# -lt 3 ] && { err "usage: sotun tunnel stop <name>"; exit 1; }
-               cmd_tunnel_stop "$3" ;;
+               svc tunnel stop "$3" require_name ;;
       restart) [ $# -lt 3 ] && { err "usage: sotun tunnel restart <name>"; exit 1; }
-               cmd_tunnel_restart "$3" ;;
+               svc tunnel restart "$3" require_name ;;
       *) err "unknown tunnel command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
   forward)
@@ -832,11 +791,11 @@ case "$cmd" in
                cmd_forward_del "$3" ;;
       list)    cmd_forward_list ;;
       start)   [ $# -lt 3 ] && { err "usage: sotun forward start <name>"; exit 1; }
-               cmd_forward_start "$3" ;;
+               svc forward start "$3" require_name ;;
       stop)    [ $# -lt 3 ] && { err "usage: sotun forward stop <name>"; exit 1; }
-               cmd_forward_stop "$3" ;;
+               svc forward stop "$3" require_name ;;
       restart) [ $# -lt 3 ] && { err "usage: sotun forward restart <name>"; exit 1; }
-               cmd_forward_restart "$3" ;;
+               svc forward restart "$3" require_name ;;
       *) err "unknown forward command '$sub'. run 'sotun help'."; exit 1 ;;
     esac ;;
   update)    cmd_update ;;

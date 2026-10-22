@@ -4,7 +4,6 @@
 
 set -euo pipefail
 
-VERSION="0.3.0"
 CONF_DIR=/etc/sotun
 SSH_KEY=~/.ssh/id_ed25519_sotun
 SYSTEMD_DIR=/etc/systemd/system
@@ -716,7 +715,7 @@ cmd_uninstall() {
 cmd_help() {
   cat <<EOF
 
-sotun v${VERSION} — ssh tunnel manager
+sotun — ssh tunnel manager
 https://github.com/vayzur/sotun
 
 usage:

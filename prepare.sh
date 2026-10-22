@@ -26,13 +26,11 @@ patch_option ClientAliveCountMax 3
 patch_option PermitTunnel yes
 
 echo "restarting sshd..."
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart sshd
-elif command -v service >/dev/null 2>&1; then
-  service ssh restart || service sshd restart
+systemctl daemon-reload
+if systemctl is-active --quiet ssh.socket; then
+  systemctl restart ssh.socket
 else
-  echo "error: cannot restart sshd — do it manually."
-  exit 1
+  systemctl restart sshd 2>/dev/null || systemctl restart ssh
 fi
 
 echo "done. this node is ready to accept reverse tunnels and L3 tunnels."

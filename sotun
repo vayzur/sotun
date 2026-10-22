@@ -587,7 +587,7 @@ cmd_forward_add() {
   mkdir -p "$FORWARD_CONF_DIR"
 
   if [ -z "$name" ]; then
-    name="$(next_name f "$TUNNEL_CONF_DIR")"
+    name="$(next_name f "$FORWARD_CONF_DIR")"
   else
     require_name "$name"
     if [ -f "$FORWARD_CONF_DIR/$name" ]; then

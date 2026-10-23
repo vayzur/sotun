@@ -89,6 +89,23 @@ parse_spec() {
   fi
 }
 
+# parse_opts [flags...]
+# accepts -p <ssh-port> and --name <name>, sets OPT_PORT OPT_NAME
+parse_opts() {
+  OPT_PORT=22
+  OPT_NAME=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -p)     [ $# -ge 2 ] || { err "missing value for -p"; exit 1; }
+              OPT_PORT="$2"; shift 2 ;;
+      --name) [ $# -ge 2 ] || { err "missing value for --name"; exit 1; }
+              OPT_NAME="$2"; shift 2 ;;
+      *)      err "unknown option '$1'. use -p <port> or --name <name>."; exit 1 ;;
+    esac
+  done
+  require_ssh_port "$OPT_PORT"
+}
+
 # next_name <prefix> <conf_dir>
 # finds the lowest unused tN / fN name in conf_dir
 next_name() {
@@ -318,15 +335,17 @@ cmd_init() {
 }
 
 cmd_proxy_add() {
-  # sotun proxy add <port> <user@host> <ssh-port>
+  # sotun proxy add <port> <user@host> [-p <ssh-port>]
   need_root
   local port="$1"
   local userhost="$2"
-  local ssh_port="$3"
+  shift 2
+  parse_opts "$@"
+  local ssh_port="$OPT_PORT"
+  [ -z "$OPT_NAME" ] || { err "proxy does not take --name."; exit 1; }
   
   # parse user@host
   require_listen_port "$port"
-  require_ssh_port "$ssh_port"
 
   local user host
   if [[ "$userhost" == *@* ]]; then
@@ -395,16 +414,17 @@ cmd_proxy_list() {
 }
 
 cmd_push_add() {
-  # sotun push add <spec> <user@host> <ssh-port> [name]
+  # sotun push add <spec> <user@host> [-p <ssh-port>] [--name <name>]
   # spec: <port> or <laddr>:<lport>:<raddr>:<rport>
   need_root
   local spec="$1"
   local userhost="$2"
-  local ssh_port="$3"
-  local name="${4:-}"
+  shift 2
+  parse_opts "$@"
+  local ssh_port="$OPT_PORT"
+  local name="$OPT_NAME"
 
   parse_spec "$spec"
-  require_ssh_port "$ssh_port"
 
   local user host
   if [[ "$userhost" == *@* ]]; then
@@ -479,15 +499,15 @@ cmd_push_list() {
 }
 
 cmd_tunnel_add() {
-  # sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]
+  # sotun tunnel add <local_ip> <remote_ip> <user@host> [-p <ssh-port>] [--name <name>]
   need_root
   local local_ip="$1"
   local remote_ip="$2"
   local userhost="$3"
-  local ssh_port="$4"
-  local name="${5:-}"
-
-  require_ssh_port "$ssh_port"
+  shift 3
+  parse_opts "$@"
+  local ssh_port="$OPT_PORT"
+  local name="$OPT_NAME"
 
   local user host
   if [[ "$userhost" == *@* ]]; then
@@ -569,16 +589,17 @@ cmd_tunnel_list() {
 }
 
 cmd_pull_add() {
-  # sotun pull add <spec> <user@host> <ssh-port> [name]
+  # sotun pull add <spec> <user@host> [-p <ssh-port>] [--name <name>]
   # spec: <port> or <laddr>:<lport>:<raddr>:<rport>
   need_root
   local spec="$1"
   local userhost="$2"
-  local ssh_port="$3"
-  local name="${4:-}"
+  shift 2
+  parse_opts "$@"
+  local ssh_port="$OPT_PORT"
+  local name="$OPT_NAME"
 
   parse_spec "$spec"
-  require_ssh_port "$ssh_port"
 
   local user host
   if [[ "$userhost" == *@* ]]; then
@@ -708,28 +729,28 @@ https://github.com/vayzur/sotun
 usage:
   sotun init                                              prepare this node (generate ssh key)
 
-  sotun proxy add <port> <user@host> <ssh-port>           add a local socks5 proxy via ssh -D
+  sotun proxy add <port> <user@host> [-p <ssh-port>]     add a local socks5 proxy via ssh -D
   sotun proxy del <port>                                   remove a proxy
   sotun proxy list                                         list all proxies
   sotun proxy start   <port>
   sotun proxy stop    <port>
   sotun proxy restart <port>
 
-  sotun push add <spec> <user@host> <ssh-port> [name]   push a port to remote via ssh -R
+  sotun push add <spec> <user@host> [-p <ssh-port>] [--name <name>]  push a port to remote via ssh -R
   sotun push del <name>                                    remove a push
   sotun push list                                          list all pushes
   sotun push start   <name>
   sotun push stop    <name>
   sotun push restart <name>
 
-  sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]  add L3 tunnel via ssh -w
+  sotun tunnel add <local_ip> <remote_ip> <user@host> [-p <ssh-port>] [--name <name>]  add L3 tunnel via ssh -w
   sotun tunnel del <name>                                   remove a tunnel
   sotun tunnel list                                         list all tunnels
   sotun tunnel start   <name>
   sotun tunnel stop    <name>
   sotun tunnel restart <name>
 
-  sotun pull add <spec> <user@host> <ssh-port> [name]   pull a port from remote via ssh -L
+  sotun pull add <spec> <user@host> [-p <ssh-port>] [--name <name>]  pull a port from remote via ssh -L
   sotun pull del <name>                                    remove a pull
   sotun pull list                                          list all pulls
   sotun pull start   <name>
@@ -739,12 +760,16 @@ usage:
   sotun update                                            pull and install latest version
   sotun uninstall                                         remove everything sotun installed
 
+options:
+  -p <port>      remote sshd port (default 22)
+  --name <name>  custom name for push/tunnel/pull
+
 spec:
   <port>                           short form — binds 127.0.0.1:<port> on both ends
   <laddr>:<lport>:<raddr>:<rport>  full form — explicit bind and target addresses
 
 name:
-  optional for tunnel/pull add — auto-assigned (t0, t1 / f0, f1) if omitted
+  set with --name on push/tunnel/pull add, otherwise auto-assigned (p0, t0, f0, ...)
   used for del/start/stop/restart instead of port numbers
 
 port restrictions:
@@ -752,11 +777,12 @@ port restrictions:
   <ssh-port> (remote sshd):   must be 1-65535
 
 examples:
-  sotun proxy add 1080 root@127.0.0.1 22
-  sotun push add 10888 root@203.0.113.10 22
-  sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10 22 sotun0
+  sotun proxy add 1080 root@127.0.0.1
+  sotun push add 10888 root@203.0.113.10
+  sotun push add 10888 root@203.0.113.10 -p 2222 --name web
+  sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10 -p 2222
   sotun tunnel del sotun0
-  sotun pull add 1080 root@203.0.113.10 22
+  sotun pull add 1080 root@203.0.113.10
 
 EOF
 }
@@ -768,8 +794,8 @@ case "$cmd" in
   init)       cmd_init ;;
   proxy)
     case "$sub" in
-      add)     [ $# -lt 5 ] && { err "usage: sotun proxy add <port> <user@host> <ssh-port>"; exit 1; }
-               cmd_proxy_add "$3" "$4" "$5" ;;
+      add)     [ $# -lt 4 ] && { err "usage: sotun proxy add <port> <user@host> [-p <ssh-port>]"; exit 1; }
+               cmd_proxy_add "$3" "$4" "${@:5}" ;;
       del)     [ $# -lt 3 ] && { err "usage: sotun proxy del <port>"; exit 1; }
                cmd_proxy_del "$3" ;;
       list)    cmd_proxy_list ;;
@@ -783,8 +809,8 @@ case "$cmd" in
     esac ;;
   push)
     case "$sub" in
-      add)     [ $# -lt 5 ] && { err "usage: sotun push add <spec> <user@host> <ssh-port> [name]"; exit 1; }
-               cmd_push_add "$3" "$4" "$5" "${6:-}" ;;
+      add)     [ $# -lt 4 ] && { err "usage: sotun push add <spec> <user@host> [-p <ssh-port>] [--name <name>]"; exit 1; }
+               cmd_push_add "$3" "$4" "${@:5}" ;;
       del)     [ $# -lt 3 ] && { err "usage: sotun push del <name>"; exit 1; }
                cmd_push_del "$3" ;;
       list)    cmd_push_list ;;
@@ -798,8 +824,8 @@ case "$cmd" in
     esac ;;
   tunnel)
     case "$sub" in
-      add)     [ $# -lt 6 ] && { err "usage: sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]"; exit 1; }
-               cmd_tunnel_add "$3" "$4" "$5" "$6" "${7:-}" ;;
+      add)     [ $# -lt 5 ] && { err "usage: sotun tunnel add <local_ip> <remote_ip> <user@host> [-p <ssh-port>] [--name <name>]"; exit 1; }
+               cmd_tunnel_add "$3" "$4" "$5" "${@:6}" ;;
       del)     [ $# -lt 3 ] && { err "usage: sotun tunnel del <name>"; exit 1; }
                cmd_tunnel_del "$3" ;;
       list)    cmd_tunnel_list ;;
@@ -813,8 +839,8 @@ case "$cmd" in
     esac ;;
   pull)
     case "$sub" in
-      add)     [ $# -lt 5 ] && { err "usage: sotun pull add <spec> <user@host> <ssh-port> [name]"; exit 1; }
-               cmd_pull_add "$3" "$4" "$5" "${6:-}" ;;
+      add)     [ $# -lt 4 ] && { err "usage: sotun pull add <spec> <user@host> [-p <ssh-port>] [--name <name>]"; exit 1; }
+               cmd_pull_add "$3" "$4" "${@:5}" ;;
       del)     [ $# -lt 3 ] && { err "usage: sotun pull del <name>"; exit 1; }
                cmd_pull_del "$3" ;;
       list)    cmd_pull_list ;;

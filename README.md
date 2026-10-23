@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/vayzur/sotun/main/install.sh | bash
 on the **exit node**, run:
 
 ```bash
-sudo sotun init
+sotun init
 ```
 
 this generates a dedicated ssh key at `~/.ssh/id_ed25519_sotun` and prints the public key.
@@ -80,8 +80,10 @@ echo "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA..." >> ~/.ssh/authorized_keys
 the proxy runs `ssh -D` on the exit node, creating a local socks5 listener.
 
 ```bash
-sudo sotun proxy add 1080 root@127.0.0.1 22
+sotun proxy add 1080 root@127.0.0.1
 ```
+
+`-p <port>` sets the remote sshd port when it is not 22. `--name <name>` gives push, tunnel, and pull a custom name.
 
 ---
 
@@ -90,11 +92,10 @@ sudo sotun proxy add 1080 root@127.0.0.1 22
 the push runs `ssh -R` to push a port to the restricted node.
 
 ```bash
-sudo sotun push add 1080 root@203.0.113.10 22
+sotun push add 1080 root@203.0.113.10
 ```
 
-sotun assigns a name automatically (`p0`, `p1`, ...). you use this name for all
-subsequent operations on that push.
+sotun assigns a name automatically (`p0`, `p1`, ...), or you can pass `--name`.
 
 ---
 
@@ -103,14 +104,15 @@ subsequent operations on that push.
 the tunnel runs `ssh -w` to create a virtual network interface between nodes.
 
 ```bash
-sudo sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10 22
+sotun tunnel add 10.0.0.1 10.0.0.2 root@203.0.113.10
 ```
 
 arguments:
 - `10.0.0.1` — local tunnel ip
 - `10.0.0.2` — remote tunnel ip
 - `root@203.0.113.10` — restricted node ssh user/ip
-- `22` — sshd port on restricted node
+
+add `-p <port>` if the restricted node's sshd is not on 22.
 
 sotun picks a free `tun` id on both ends, stores them in the tunnel config, and assigns a name automatically (`t0`, `t1`, ...). if the restricted node is unreachable, the tunnel is not created.
 
@@ -121,7 +123,7 @@ sotun picks a free `tun` id on both ends, stores them in the tunnel config, and 
 `sotun pull` pulls a port *from* the remote node to this node via `ssh -L`.
 
 ```bash
-sudo sotun pull add 1080 root@203.0.113.10 22
+sotun pull add 1080 root@203.0.113.10
 ```
 
 ---
@@ -129,10 +131,10 @@ sudo sotun pull add 1080 root@203.0.113.10 22
 ## listing what you have
 
 ```bash
-sudo sotun proxy list
-sudo sotun push list
-sudo sotun tunnel list
-sudo sotun pull list
+sotun proxy list
+sotun push list
+sotun tunnel list
+sotun pull list
 ```
 
 ---
@@ -140,8 +142,8 @@ sudo sotun pull list
 ## start / stop / restart
 
 ```bash
-sudo sotun push start p0
-sudo sotun tunnel start t0
+sotun push start p0
+sotun tunnel start t0
 ```
 
 ---
@@ -149,36 +151,6 @@ sudo sotun tunnel start t0
 ## remove
 
 ```bash
-sudo sotun push del p0
-sudo sotun tunnel del t0
+sotun push del p0
+sotun tunnel del t0
 ```
-
----
-
-## all commands
-
-```
-sotun init
-
-sotun proxy add <port> <user@host> <ssh-port>
-sotun proxy del <port>
-sotun proxy list
-
-sotun push add <spec> <user@host> <ssh-port> [name]
-sotun push del <name>
-sotun push list
-
-sotun tunnel add <local_ip> <remote_ip> <user@host> <ssh-port> [name]
-sotun tunnel del <name>
-sotun tunnel list
-
-sotun pull add <spec> <user@host> <ssh-port> [name]
-sotun pull del <name>
-sotun pull list
-
-sotun update
-sotun uninstall
-sotun help
-```
-
-where `<spec>` is either `<port>` or `<laddr>:<lport>:<raddr>:<rport>`.
